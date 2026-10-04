@@ -1,5 +1,8 @@
 # RSTP — Reflex Skill Tree Protocol
 
+[![CI](https://github.com/Vektra-Industries/reflex-skill-tree/actions/workflows/ci.yml/badge.svg)](https://github.com/Vektra-Industries/reflex-skill-tree/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 An open, model-agnostic **skill tree** for AI agents — a video-game-shaped
 way to track an agent's own capabilities leveling up over time. Nodes are
 skills, tiers are mastery, prerequisites form a tree (a DAG, really), and
@@ -63,11 +66,16 @@ for the reference implementation (stdlib-only).
 
 ## Install
 
+Not yet published to PyPI — clone and install from source:
+
 ```bash
-pip install rstp   # or: pip install -e . from a clone
+git clone https://github.com/Vektra-Industries/reflex-skill-tree.git
+cd reflex-skill-tree
+pip install -e .
 ```
 
-No dependencies. Python 3.9+. Works with any model/agent — RSTP has no
+No dependencies. Python 3.9+. Ships a `py.typed` marker, so your type
+checker picks up its types. Works with any model/agent — RSTP has no
 opinion on what's calling it.
 
 ## Quickstart
@@ -129,6 +137,29 @@ each time the skill is actually used.
 Dotted directories (`.archive/`, etc) are skipped automatically — retired
 material doesn't re-enter the live tree.
 
+## Visualizing a tree
+
+`viewer/index.html` is a standalone, dependency-free skill-tree renderer —
+no server, no build step, no network call, nothing leaves your machine.
+Open it in a browser, pick a `tree.json` file, and see the actual tree:
+nodes color-coded by tier, allocated nodes outlined in white, solid edges
+for AND-prerequisites, dashed edges for OR-prerequisites.
+
+```bash
+# any static file server works, e.g.:
+python3 -m http.server 8000 --directory viewer
+# then open http://localhost:8000/index.html and pick a tree.json
+```
+
+(Opening `index.html` directly via `file://` also works in most browsers;
+some sandboxed/snap browser builds block local file access entirely, in
+which case the quick server above sidesteps it.)
+
+`viewer/example-tree.json` + `viewer/smoke-test.html` exist so the
+rendering logic can be verified headlessly (fetch the example tree, render
+it, screenshot) without driving a real file-picker — useful if you're
+modifying `viewer/app.js` and want to confirm it still renders correctly.
+
 ## History
 
 This started as [`vektra-reflex`](https://github.com/Vektra-Industries/vektra-reflex),
@@ -141,13 +172,16 @@ guard pretense entirely, keep the one part that was actually good design —
 a DAG-shaped progression tree — and ship it as plain, portable, open
 software instead of a plugin that depends on a specific host's hooks.
 
+Full version history: [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Status
 
-v0.3.0. Reference implementation is stdlib-only Python with unit tests
+v0.4.0. Reference implementation is stdlib-only Python with 45 unit tests
 covering the DAG/cycle rejection, promotion, points/affinity/branch-usage
-gating, the skill-library importer, and persistence — see `tests/`. This is
-a protocol + reference implementation, not a hosted service: your tree,
-your file, your repo.
+gating, the skill-library importer, and persistence — see `tests/`. Plus a
+dependency-free HTML/SVG viewer (`viewer/`), screenshot-verified against a
+real multi-branch tree. This is a protocol + reference implementation, not
+a hosted service: your tree, your file, your repo.
 
 ## License
 

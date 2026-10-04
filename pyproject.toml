@@ -1,12 +1,25 @@
 [project]
 name = "rstp"
-version = "0.3.0"
+version = "0.4.0"
 description = "Reflex Skill Tree Protocol — an open, model-agnostic skill tree for AI agents"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "MIT"
 requires-python = ">=3.9"
 dependencies = []
 authors = [{name = "Vektra Industries"}]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/Vektra-Industries/reflex-skill-tree"
+Repository = "https://github.com/Vektra-Industries/reflex-skill-tree"
+Issues = "https://github.com/Vektra-Industries/reflex-skill-tree/issues"
+Changelog = "https://github.com/Vektra-Industries/reflex-skill-tree/blob/main/CHANGELOG.md"
 
 [project.scripts]
 rstp = "rstp.cli:main"
@@ -17,3 +30,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["rstp*"]
+
+[tool.setuptools.package-data]
+rstp = ["py.typed"]

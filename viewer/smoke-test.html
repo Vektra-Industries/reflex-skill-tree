@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RSTP Viewer — smoke test harness</title>
+</head>
+<body style="margin:0;font-family:-apple-system,system-ui,sans-serif;background:#0b0f1a;color:#e5e7eb;">
+<header style="padding:14px 20px;border-bottom:1px solid #1f2937;display:flex;align-items:center;gap:16px;">
+  <h1 style="font-size:16px;margin:0;">RSTP Tree Viewer (smoke test)</h1>
+  <span class="stat" id="stats" style="font-size:12px;color:#9ca3af;"></span>
+</header>
+<div id="empty" style="padding:60px 20px;text-align:center;color:#9ca3af;"></div>
+<div id="canvas-wrap" style="overflow:auto;padding:20px;"></div>
+<style>
+  .branch-title { font-size: 13px; font-weight: 600; fill: #e5e7eb; }
+  .node-box { stroke-width: 1.5; }
+  .node-box.allocated { stroke: #fff; stroke-width: 2.5; }
+  .node-title { font-size: 11px; fill: #0b0f1a; font-weight: 600; }
+  .node-tier { font-size: 9px; fill: #0b0f1a; }
+  .edge { stroke: #4b5563; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+  .edge-any { stroke: #4b5563; stroke-width: 1.5; stroke-dasharray: 4 3; fill: none; marker-end: url(#arrow); }
+  :root {
+    --seed: #6b7280; --novice: #60a5fa; --adept: #3b82f6;
+    --expert: #a855f7; --master: #f59e0b;
+  }
+</style>
+<script src="app.js"></script>
+<script>
+  // Test-only: fetch a fixed tree and render it immediately, no file picker
+  // interaction needed — lets a headless browser verify real rendering.
+  fetch("example-tree.json")
+    .then((r) => r.json())
+    .then((tree) => {
+      render(tree);
+      document.title = "RSTP Tree Viewer (smoke test) — rendered";
+    })
+    .catch((err) => {
+      document.getElementById("empty").textContent = "FETCH/RENDER FAILED: " + err.message;
+      document.title = "RSTP Tree Viewer (smoke test) — FAILED";
+    });
+</script>
+</body>
+</html>

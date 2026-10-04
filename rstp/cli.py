@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 from .tree import Node, TierName, load, save, validate_dag
+from . import __version__
 
 DEFAULT_TREE = Path("tree.json")
 
@@ -125,6 +126,7 @@ def cmd_check(args) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--version", action="version", version=f"rstp {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s1 = sub.add_parser("status")

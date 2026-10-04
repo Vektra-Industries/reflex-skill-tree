@@ -17,5 +17,5 @@ from .tree import (
     validate_dag,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __all__ = ["Node", "Tree", "TierName", "load", "save", "validate_dag", "__version__"]
