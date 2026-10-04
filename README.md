@@ -20,6 +20,27 @@ and one small script it calls to log practice.** Any model, any agent, any
 framework — Hermes, LangChain, a raw OpenAI/Anthropic loop, a bash script
 calling an LLM API, anything that can read a file and run a CLI.
 
+## Where this sits in the skills ecosystem
+
+The SKILL.md format (a folder with a YAML-frontmatter file, lazy-loaded —
+an agent reads just the name + description at session start, pulls the
+full body in only once it's relevant) has spread fast across Claude Code,
+Codex, Cursor, Gemini CLI, Hermes, Windsurf and more through directories
+like `obra/superpowers` and `ComposioHQ/awesome-claude-skills`. Those
+projects are *workflow* skills (an agent's methodology). RSTP is different
+in kind: it's a skill *tracker* — it doesn't tell an agent how to do
+something, it tracks whether the agent is actually getting better at the
+things it already does. The two compose: `rstp import-skills` turns any
+of those workflow-skill libraries into a tree of trackable nodes in one
+command.
+
+RSTP ships two ways to land in that ecosystem:
+- As a **library + CLI** (`pip install -e .`), for scripts and CI.
+- As a **skill directory** (this repo, dropped whole into any agent's
+  skills folder — see the root `SKILL.md`): zero `pip install` required,
+  because the implementation is stdlib-only Python. Set `PYTHONPATH` at
+  the folder and `python3 -m rstp ...` just works.
+
 ## The game model
 
 Researched real skill-tree design (Path of Exile's shared DAG, Diablo 4's
@@ -188,6 +209,12 @@ from rstp.tree import save
 
 tree = import_skills("/path/to/your/skills/directory")
 save(tree, "tree.json")
+```
+
+Or from the CLI directly, no Python needed:
+
+```bash
+rstp import-skills /path/to/your/skills/directory --tree tree.json
 ```
 
 Re-running the import is safe — it never overwrites a node that's already

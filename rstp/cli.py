@@ -10,6 +10,7 @@ levels. No guard, no triggers, no mistake-catching.
   rstp fuse <branch> <new_id> --title T --from ID --from ID [--from ID ...] [--tree PATH]
   rstp allocate <node_id> [--tree PATH]   # spend points to lock a node into the build
   rstp check [--tree PATH]                # validate the DAG, exit 1 on problems
+  rstp import-skills <skills_dir> [--tree PATH]   # seed Tier-0 nodes from a SKILL.md library
 """
 from __future__ import annotations
 
@@ -156,6 +157,25 @@ def cmd_check(args) -> int:
     return 0
 
 
+def cmd_import_skills(args) -> int:
+    from .importers.skills import import_skills
+
+    tree = load(args.tree)
+    before = set(tree.nodes())
+    tree = import_skills(args.skills_dir, tree)
+    added = sorted(set(tree.nodes()) - before)
+    save(tree, args.tree)
+    if not added:
+        print("no new skills found (library empty, or all already seeded)")
+        return 0
+    print(f"seeded {len(added)} new Tier-0 node(s) from {args.skills_dir}:")
+    for nid in added[:20]:
+        print(f"  + {nid}")
+    if len(added) > 20:
+        print(f"  ... and {len(added) - 20} more")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--version", action="version", version=f"rstp {__version__}")
@@ -203,6 +223,11 @@ def main(argv: list[str] | None = None) -> int:
                      help="a source node id; pass --from at least twice")
     s7.add_argument("--tree", type=Path, default=DEFAULT_TREE)
     s7.set_defaults(fn=cmd_fuse)
+
+    s8 = sub.add_parser("import-skills")
+    s8.add_argument("skills_dir")
+    s8.add_argument("--tree", type=Path, default=DEFAULT_TREE)
+    s8.set_defaults(fn=cmd_import_skills)
 
     args = p.parse_args(argv)
     return args.fn(args)

@@ -3,6 +3,31 @@
 All notable changes to this project are documented here. Versions follow
 `MAJOR.MINOR.PATCH` loosely — this is a young protocol, not a stable API yet.
 
+## [0.6.0] - 2026-10-04
+
+### Added
+- **Root `SKILL.md`** — the repo is now directly droppable into any
+  Claude-Code/Hermes/Cursor/etc. skills directory, zero `pip install`
+  required (verified: copied the whole repo into a scratch skills folder,
+  ran the exact commands the doc shows via `PYTHONPATH=`, zero changes
+  needed).
+- **`rstp import-skills <dir> [--tree PATH]`** CLI command, wired to the
+  existing `import_skills()` library function. Previously that function
+  had no CLI entry point at all — drafting the new root SKILL.md surfaced
+  this as a real gap (it referenced a `python3 -m rstp.importers.skills`
+  invocation that doesn't exist; fixed by building the actual command
+  instead of just correcting the doc to hide the gap).
+- README: new "Where this sits in the skills ecosystem" section —
+  positions RSTP against workflow-skill directories (`obra/superpowers`,
+  `ComposioHQ/awesome-claude-skills`): those teach an agent *how* to do
+  something, RSTP tracks whether it's *actually getting better* at it.
+
+### Verified
+- Full test suite + `ruff check` clean.
+- `rstp import-skills` run end-to-end against a real 326-skill library
+  (not a synthetic fixture) via the public CLI, both from a fresh venv
+  install and from a zero-install `PYTHONPATH` drop.
+
 ## [0.5.0] - 2026-10-04
 
 ### Added
