@@ -147,8 +147,71 @@ framework dependency; the `mode` concept (`remind`/`guard`/`approve`) maps
 onto RSTP tiers 1/2/3 respectively, and `always_guard_tools` ports over with
 an identical name and meaning.
 
-## 8. Versioning
+## 9. v2 extensions: points, affinity, branch usage
 
-This file describes protocol version 1 (`"version": 1` in a tree's root).
+Schema version 2 (`"version": 2`) adds three independent gating/economy
+mechanisms, each inspired by a specific proven game system (see README for
+attribution). All three are additive to v1: a v1 tree loads and behaves
+identically under a v2 implementation with points=0, no affinity, and no
+usage requirements — nothing here changes v1 node/tier semantics.
+
+### 9.1 Points (an allocation economy)
+
+A `Tree` carries a `points` integer wallet. Every `record()` call with
+outcome `prevented` credits the wallet by a fixed amount (reference value:
+1). A `Node` carries a `cost` (reference default: 1) and an `allocated`
+boolean. `Tree.allocate(node_id)` is the only way to set `allocated = True`;
+it MUST check every gate in §9.4 and MUST decrement the wallet by exactly
+`cost`, atomically — either the full allocation succeeds (gates pass, points
+spent, flag set) or nothing changes. Nodes that are merely recorded but never
+allocated carry no enforcement weight beyond what their raw `tier` implies;
+allocation is the explicit "I'm turning this on" action, same as spending a
+Paragon point.
+
+### 9.2 Affinity (Node)
+
+A `Node` carries `affinity: dict[str, int]`, a set of named-category points
+it grants once two conditions hold simultaneously: it is `allocated` AND its
+`tier >= ADEPT`. `Tree.affinity_totals()` sums these across every
+qualifying node, by category. A `Node` carries `affinity_requirements:
+dict[str, int]`; it is not allocatable while any required category's total
+(from every *other* qualifying node) is below the stated minimum.
+
+### 9.3 Branch usage (leveling by use)
+
+A `Tree` carries `branch_usage: dict[str, int]`, one raw counter per branch.
+Every `record()` call increments its node's branch counter by 1, regardless
+of outcome — matching a call at all is "use," independent of whether that
+specific call went well. `Tree.branch_level(branch)` is
+`branch_usage[branch] // USAGE_PER_LEVEL` (reference constant: 5). A `Node`
+carries `min_branch_level`; it is not allocatable until its own branch's
+level meets that minimum.
+
+### 9.4 Combined allocation gate
+
+`Tree.allocatable(node_id)` MUST check, and report failures for, all of:
+unmet DAG prerequisites (§5, at Adept+), unmet affinity requirements (§9.2),
+insufficient branch usage level (§9.3), and insufficient points (§9.1) — in
+any order, but all four, every time; a conforming implementation MUST NOT
+short-circuit on the first failing gate when the caller wants a reason list
+(the reference CLI shows every unmet reason, not just one).
+
+## 10. Importing existing lesson/skill libraries
+
+An implementation MAY ship an importer that converts an existing library of
+agent skills/capabilities (not just "mistake" lessons) into Seed-tier nodes,
+one per discovered skill, so that a library of capabilities can be tracked
+the same evidence-gated way as any other lesson: `prevented` when a relevant
+skill was actually reached for, `ineffective` when it was available and
+skipped. Node IDs from such an importer MUST be namespaced (e.g.
+`<category>/<name>`) to avoid collisions between two differently-categorized
+skills that happen to share a bare name. Re-running an importer MUST NOT
+reset evidence/tier/allocation on a node that already exists in the target
+tree — only new, not-yet-seen skills are added.
+
+## 11. Versioning
+
+This file describes protocol version 2 (`"version": 2` in a tree's root).
 Breaking changes to field meaning (not additions) require a version bump and
 a migration note in this file.
+

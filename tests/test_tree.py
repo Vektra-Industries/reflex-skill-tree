@@ -22,6 +22,10 @@ def make_node(node_id="n1", branch="b1", prereqs=None, tier=TierName.SEED, **kw)
         prerequisites=prereqs or [],
         triggers=kw.get("triggers", {"tool_names": ["write_file"], "path_glob": ["*.env"]}),
         always_guard_tools=kw.get("always_guard_tools", []),
+        cost=kw.get("cost", 1),
+        affinity=kw.get("affinity", {}),
+        affinity_requirements=kw.get("affinity_requirements", {}),
+        min_branch_level=kw.get("min_branch_level", 0),
     )
 
 
@@ -194,6 +198,180 @@ class TestPersistence(unittest.TestCase):
             with self.assertRaises(RSTPError):
                 save(tree, p)
             self.assertFalse(p.exists())
+
+
+class TestPoints(unittest.TestCase):
+    """Diablo 4 Paragon-style: evidence earns points, allocation spends them."""
+
+    def test_recording_prevented_earns_a_point(self):
+        tree = Tree()
+        tree.upsert(make_node("a"))
+        self.assertEqual(tree.points, 0)
+        tree.record("a", "prevented")
+        self.assertEqual(tree.points, 1)
+
+    def test_ineffective_and_unknown_earn_nothing(self):
+        tree = Tree()
+        tree.upsert(make_node("a"))
+        tree.record("a", "ineffective")
+        tree.record("a", "unknown")
+        self.assertEqual(tree.points, 0)
+
+    def test_allocate_spends_points_and_marks_allocated(self):
+        tree = Tree()
+        tree.upsert(make_node("a", cost=1))
+        tree.record("a", "prevented")  # earns 1pt
+        tree.allocate("a")
+        node = tree.get("a")
+        assert node is not None
+        self.assertTrue(node.allocated)
+        self.assertEqual(tree.points, 0)
+
+    def test_allocate_fails_without_enough_points(self):
+        tree = Tree()
+        tree.upsert(make_node("a", cost=5))
+        tree.record("a", "prevented")  # only 1pt, need 5
+        with self.assertRaises(RSTPError):
+            tree.allocate("a")
+
+    def test_allocate_twice_fails(self):
+        tree = Tree()
+        tree.upsert(make_node("a", cost=1))
+        tree.record("a", "prevented")
+        tree.allocate("a")
+        with self.assertRaises(RSTPError):
+            tree.allocate("a")
+
+    def test_allocate_unknown_node_fails(self):
+        tree = Tree()
+        with self.assertRaises(RSTPError):
+            tree.allocate("ghost")
+
+
+class TestAffinity(unittest.TestCase):
+    """Grim Dawn devotion-style: cross-branch affinity gates a node."""
+
+    def test_affinity_only_counts_allocated_adept_plus_nodes(self):
+        tree = Tree()
+        tree.upsert(make_node("a", tier=TierName.ADEPT, affinity={"order": 3}))
+        self.assertEqual(tree.affinity_totals(), {})  # not allocated yet
+        a = tree.get("a")
+        assert a is not None
+        a.allocated = True
+        tree.upsert(a)
+        self.assertEqual(tree.affinity_totals(), {"order": 3})
+
+    def test_affinity_below_adept_does_not_count_even_if_allocated(self):
+        tree = Tree()
+        node = make_node("a", tier=TierName.NOVICE, affinity={"order": 3})
+        node.allocated = True
+        tree.upsert(node)
+        self.assertEqual(tree.affinity_totals(), {})
+
+    def test_affinity_requirement_gates_allocation(self):
+        tree = Tree()
+        donor = make_node("donor", tier=TierName.ADEPT, affinity={"order": 5})
+        donor.allocated = True
+        tree.upsert(donor)
+        tree.points = 0
+        gated = make_node("gated", affinity_requirements={"order": 5}, cost=0)
+        tree.upsert(gated)
+        ok, reasons = tree.allocatable("gated")
+        self.assertTrue(ok, reasons)  # donor already supplies exactly enough
+
+    def test_affinity_requirement_blocks_when_insufficient(self):
+        tree = Tree()
+        donor = make_node("donor", tier=TierName.ADEPT, affinity={"order": 2})
+        donor.allocated = True
+        tree.upsert(donor)
+        gated = make_node("gated", affinity_requirements={"order": 5}, cost=0)
+        tree.upsert(gated)
+        ok, reasons = tree.allocatable("gated")
+        self.assertFalse(ok)
+        self.assertTrue(any("order" in r for r in reasons))
+
+    def test_affinity_sums_across_branches(self):
+        tree = Tree()
+        a = make_node("a", branch="b1", tier=TierName.ADEPT, affinity={"chaos": 2})
+        a.allocated = True
+        b = make_node("b", branch="b2", tier=TierName.ADEPT, affinity={"chaos": 3})
+        b.allocated = True
+        tree.upsert(a)
+        tree.upsert(b)
+        self.assertEqual(tree.affinity_totals(), {"chaos": 5})
+
+
+class TestBranchUsage(unittest.TestCase):
+    """Skyrim-style: a branch levels from real usage, not from declaring intent."""
+
+    def test_usage_increments_on_every_log_regardless_of_outcome(self):
+        tree = Tree()
+        tree.upsert(make_node("a", branch="combat"))
+        tree.record("a", "prevented")
+        tree.record("a", "ineffective")
+        tree.record("a", "unknown")
+        self.assertEqual(tree.branch_usage["combat"], 3)
+
+    def test_branch_level_follows_usage_per_level_constant(self):
+        tree = Tree()
+        tree.upsert(make_node("a", branch="combat"))
+        for _ in range(5):
+            tree.record("a", "unknown")  # 5 = _USAGE_PER_LEVEL, earns no points
+        self.assertEqual(tree.branch_level("combat"), 1)
+
+    def test_branch_level_zero_before_threshold(self):
+        tree = Tree()
+        tree.upsert(make_node("a", branch="combat"))
+        tree.record("a", "unknown")
+        self.assertEqual(tree.branch_level("combat"), 0)
+
+    def test_min_branch_level_gates_allocation(self):
+        tree = Tree()
+        gated = make_node("a", branch="combat", min_branch_level=1, cost=0)
+        tree.upsert(gated)
+        ok, reasons = tree.allocatable("a")
+        self.assertFalse(ok)
+        self.assertTrue(any("usage level" in r for r in reasons))
+        for _ in range(5):
+            tree.record("a", "unknown")
+        ok, reasons = tree.allocatable("a")
+        self.assertTrue(ok, reasons)
+
+    def test_unrelated_branch_unaffected(self):
+        tree = Tree()
+        tree.upsert(make_node("a", branch="combat"))
+        tree.upsert(make_node("b", branch="stealth"))
+        tree.record("a", "prevented")
+        self.assertEqual(tree.branch_usage.get("stealth", 0), 0)
+
+
+class TestAllocatableCombined(unittest.TestCase):
+    """All three v0.2 gates (prereqs + affinity + branch level) plus points,
+    combined — proving they compose rather than silently overriding each other."""
+
+    def test_all_gates_must_pass_at_once(self):
+        tree = Tree()
+        prereq = make_node("prereq", branch="b", tier=TierName.ADEPT)
+        tree.upsert(prereq)
+        node = make_node(
+            "final", branch="b", prereqs=["prereq"],
+            affinity_requirements={"order": 1}, min_branch_level=1, cost=3,
+        )
+        tree.upsert(node)
+        ok, reasons = tree.allocatable("final")
+        self.assertFalse(ok)
+        self.assertGreaterEqual(len(reasons), 2)  # affinity AND usage-level both unmet
+
+    def test_round_trip_preserves_points_and_usage(self):
+        tree = Tree()
+        tree.upsert(make_node("a", cost=1))
+        tree.record("a", "prevented")
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "tree.json"
+            save(tree, p)
+            reloaded = load(p)
+            self.assertEqual(reloaded.points, tree.points)
+            self.assertEqual(reloaded.branch_usage, tree.branch_usage)
 
 
 if __name__ == "__main__":

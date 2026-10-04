@@ -17,6 +17,23 @@ Design borrows the genre's proven levers (see ../SPEC.md for citations):
     others (PoE: "class is a vector into shared geometry"). RSTP trees are
     plain portable JSON for exactly this reason — fork, merge, or start fresh
     from someone else's proven nodes.
+
+v0.2 adds three more genre-proven levers (see SPEC.md §9):
+  - Skill Points as a scarce, spent currency (Diablo 4 Paragon): proving a
+    lesson earns points; *allocating* a node — making its tier enforcement
+    live — costs points. A tree full of unspent Seed nodes costs nothing, so
+    there's never a reason not to record a lesson; but turning one into an
+    enforced Guardian is a real, finite choice, same as a Paragon board.
+  - Affinity (Grim Dawn devotion constellations): nodes can grant affinity
+    points in named categories on reaching Adept. A node can require a
+    minimum affinity total before it can be allocated — gating a powerful
+    node behind *breadth* of proven lessons across branches, not just a
+    single deep chain.
+  - Branch mastery / usage leveling (Skyrim): every real match-and-log event
+    against a branch counts as "usage" for that branch, independent of which
+    node it hit. A node can require a minimum branch usage level before it
+    can be allocated — you have to have actually exercised the branch, not
+    just proven one lesson in isolation.
 """
 from __future__ import annotations
 
@@ -28,11 +45,18 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # clean "prevented" outcomes needed to promote FROM this tier, with zero
 # "ineffective" outcomes recorded since the last promotion/demotion.
 _PROMOTE_AT = {0: 1, 1: 2, 2: 4, 3: 8}
+
+# skill points earned per real outcome logged (Paragon-style wallet, v0.2).
+_POINTS_PER_OUTCOME = {"prevented": 1, "ineffective": 0, "unknown": 0}
+
+# usage events (any match-and-log, any outcome) needed to raise a branch's
+# usage level by 1 — Skyrim-style "level by use", not by declaration.
+_USAGE_PER_LEVEL = 5
 
 
 class TierName(IntEnum):
@@ -83,7 +107,8 @@ class Evidence:
 class Node:
     """One lesson. Shape is intentionally close to a vektra-reflex Lesson
     (title/pitfall/do/triggers) so existing lesson data ports over directly,
-    plus the DAG/tier/keystone fields the plugin never had.
+    plus the DAG/tier/keystone fields the plugin never had, plus the v0.2
+    points/affinity/usage-gating fields (see module docstring).
     """
 
     id: str
@@ -100,6 +125,17 @@ class Node:
     provenance: dict[str, Any] = field(default_factory=dict)
     created_at: str = ""
     updated_at: str = ""
+
+    # --- v0.2: Paragon-style points economy -------------------------------
+    cost: int = 1                       # skill points required to allocate this node
+    allocated: bool = False             # has the wallet actually been spent on it?
+
+    # --- v0.2: Grim Dawn-style affinity -------------------------------------
+    affinity: dict[str, int] = field(default_factory=dict)       # granted on reaching Adept
+    affinity_requirements: dict[str, int] = field(default_factory=dict)  # gates allocation
+
+    # --- v0.2: Skyrim-style branch usage gating -----------------------------
+    min_branch_level: int = 0           # gates allocation on this node's own branch usage
 
     def matches(self, tool_name: str, text: str) -> bool:
         """True if a call like (tool_name, "write_file /path/.env") trips this node."""
@@ -119,15 +155,16 @@ class Node:
         if session and session not in self.evidence.sessions_seen:
             self.evidence.sessions_seen.append(session)
         self.updated_at = _now()
+        result = None
         if outcome == "prevented" and self.tier < TierName.MASTER:
             need = _PROMOTE_AT.get(self.tier, 999)
             if self.evidence.prevented >= need and self.evidence.ineffective == 0:
                 self.tier += 1
-                return "promoted"
+                result = "promoted"
         elif outcome == "ineffective" and self.tier >= TierName.ADEPT:
             self.tier -= 1
-            return "demoted"
-        return None
+            result = "demoted"
+        return result
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -151,6 +188,11 @@ class Node:
             provenance=dict(d.get("provenance") or {}),
             created_at=d.get("created_at", ""),
             updated_at=d.get("updated_at", ""),
+            cost=int(d.get("cost", 1)),
+            allocated=bool(d.get("allocated", False)),
+            affinity=dict(d.get("affinity") or {}),
+            affinity_requirements=dict(d.get("affinity_requirements") or {}),
+            min_branch_level=int(d.get("min_branch_level", 0)),
         )
 
 
@@ -158,6 +200,8 @@ class Node:
 class Tree:
     version: int = SCHEMA_VERSION
     branches: dict[str, dict[str, Any]] = field(default_factory=dict)
+    points: int = 0                               # Paragon-style wallet, earned via record()
+    branch_usage: dict[str, int] = field(default_factory=dict)  # Skyrim-style raw usage counters
 
     # ---- node access -----------------------------------------------------
 
@@ -174,9 +218,25 @@ class Tree:
     def match(self, tool_name: str, text: str) -> list[Node]:
         return [n for n in self.nodes().values() if n.matches(tool_name, text)]
 
+    def branch_level(self, branch: str) -> int:
+        """Skyrim-style: a branch 'levels' purely from real usage, independent
+        of any one node's own evidence."""
+        return self.branch_usage.get(branch, 0) // _USAGE_PER_LEVEL
+
+    def affinity_totals(self) -> dict[str, int]:
+        """Grim Dawn-style: summed affinity from every node that is both
+        allocated and at Adept or higher — matches the "completed constellation"
+        condition, not merely a drafted one."""
+        totals: dict[str, int] = {}
+        for node in self.nodes().values():
+            if node.allocated and node.tier >= TierName.ADEPT:
+                for cat, pts in node.affinity.items():
+                    totals[cat] = totals.get(cat, 0) + pts
+        return totals
+
     def unlocked(self, node_id: str) -> bool:
-        """A node is unlocked once every prerequisite is at ADEPT or higher —
-        the DAG gate. Nodes with no prerequisites are always unlocked."""
+        """DAG gate only: every prerequisite is at ADEPT or higher. Does NOT
+        check points/affinity/usage — see allocatable() for the full gate."""
         node = self.get(node_id)
         if node is None:
             raise RSTPError(f"no such node: {node_id}")
@@ -184,6 +244,29 @@ class Tree:
         return all(
             p in nodes and nodes[p].tier >= TierName.ADEPT for p in node.prerequisites
         )
+
+    def allocatable(self, node_id: str) -> tuple[bool, list[str]]:
+        """Full v0.2 gate: DAG prerequisites + affinity requirements + branch
+        usage level + enough unspent points. Returns (ok, reasons_if_not)."""
+        node = self.get(node_id)
+        if node is None:
+            raise RSTPError(f"no such node: {node_id}")
+        reasons: list[str] = []
+        if not self.unlocked(node_id):
+            missing = [p for p in node.prerequisites if p not in self.nodes()
+                       or self.nodes()[p].tier < TierName.ADEPT]
+            reasons.append(f"prerequisites not yet Adept: {', '.join(missing)}")
+        totals = self.affinity_totals()
+        for cat, need in node.affinity_requirements.items():
+            have = totals.get(cat, 0)
+            if have < need:
+                reasons.append(f"affinity {cat}: have {have}, need {need}")
+        level = self.branch_level(node.branch)
+        if level < node.min_branch_level:
+            reasons.append(f"branch {node.branch!r} usage level {level} < required {node.min_branch_level}")
+        if node.cost > self.points:
+            reasons.append(f"cost {node.cost} > {self.points} available points")
+        return (not reasons, reasons)
 
     # ---- mutation ----------------------------------------------------------
 
@@ -200,14 +283,45 @@ class Tree:
             raise RSTPError(f"no such node: {node_id}")
         result = node.record(outcome, session)
         self.upsert(node)
+        # every real match-and-log is "usage" of the branch, regardless of
+        # outcome or whether it moved the node's own tier (Skyrim leveling).
+        self.branch_usage[node.branch] = self.branch_usage.get(node.branch, 0) + 1
+        # earning follows the same outcome, a flat Paragon-style wallet credit.
+        self.points += _POINTS_PER_OUTCOME.get(outcome, 0)
         return result
 
+    def allocate(self, node_id: str) -> None:
+        """Spend points to turn on enforcement for a node. Raises RSTPError
+        with the specific unmet gate(s) if not currently allocatable."""
+        node = self.get(node_id)
+        if node is None:
+            raise RSTPError(f"no such node: {node_id}")
+        if node.allocated:
+            raise RSTPError(f"{node_id} is already allocated")
+        ok, reasons = self.allocatable(node_id)
+        if not ok:
+            raise RSTPError(f"cannot allocate {node_id}: " + "; ".join(reasons))
+        self.points -= node.cost
+        node.allocated = True
+        node.updated_at = _now()
+        self.upsert(node)
+
     def to_dict(self) -> dict[str, Any]:
-        return {"version": self.version, "branches": self.branches}
+        return {
+            "version": self.version,
+            "branches": self.branches,
+            "points": self.points,
+            "branch_usage": self.branch_usage,
+        }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Tree":
-        return cls(version=int(d.get("version", SCHEMA_VERSION)), branches=dict(d.get("branches") or {}))
+        return cls(
+            version=int(d.get("version", SCHEMA_VERSION)),
+            branches=dict(d.get("branches") or {}),
+            points=int(d.get("points", 0)),
+            branch_usage=dict(d.get("branch_usage") or {}),
+        )
 
 
 def _now() -> str:

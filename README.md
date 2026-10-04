@@ -115,11 +115,64 @@ A vektra-reflex `Lesson` (`title`/`pitfall`/`do`/`skill`/`triggers`/
 field names for everything except `mode`/`guard_until`, which become a tier.
 See [`examples/from-vektra-reflex.json`](examples/from-vektra-reflex.json).
 
+## Growing a tree from an existing skill library
+
+`rstp.importers.skills` walks any on-disk "SKILL.md with YAML frontmatter"
+library (the common Claude-Code/Hermes-style layout: `category/skill-name/
+SKILL.md`, or a bare `skill-name/SKILL.md` at the root) and turns every
+skill it finds into a Tier-0 Seed node — one per skill, namespaced
+`<category>/<skill-name>` so two skills that happen to share a name in
+different categories never collide:
+
+```python
+from rstp.importers.skills import import_skills
+from rstp.tree import save
+
+tree = import_skills("/path/to/your/skills/directory")
+save(tree, "tree.json")
+```
+
+Re-running the import is safe — it never overwrites a node that's already
+earned real evidence; new skills on disk are added, nothing proven is reset.
+A skill node promotes exactly like any other: log `prevented` when you
+actually reached for the skill at the right moment, `ineffective` when you
+had it available and skipped it anyway.
+
+Dotted directories (`.archive/`, etc) are skipped automatically — retired
+material doesn't re-enter the live tree.
+
+## Growing a bigger tree (v0.2): points, affinity, usage
+
+Three more genre-proven levers, same evidence-first spirit as the base
+protocol:
+
+- **Points** (Diablo 4 Paragon). Proving a node (`prevented`) earns a point;
+  turning a node's enforcement *on* (`Tree.allocate`) spends points equal to
+  its `cost`. Recording a lesson is always free — spending to make it bind
+  is the real, finite choice.
+- **Affinity** (Grim Dawn devotion constellations). A node can grant
+  `affinity` points in named categories once it's both allocated and at
+  Adept+. Another node can require a minimum `affinity_requirements` total
+  before it's allocatable — gating a powerful cross-cutting node behind
+  *breadth* of proven lessons, not just one deep chain.
+- **Branch usage** (Skyrim leveling-by-use). Every real match-and-log event
+  bumps that node's branch's usage counter, regardless of outcome. A node
+  can set `min_branch_level` to require the branch actually be exercised
+  before it unlocks — proven once isn't the same as proven *in context*.
+
+```bash
+rstp status --tree tree.json              # see points, affinity, branch levels
+rstp allocate <node_id> --tree tree.json   # spend points once a node's gates pass
+```
+
+See `SPEC.md` §9 for the full mechanics and defaults.
+
 ## Status
 
-v0.1.0. Reference implementation is stdlib-only Python with 23 unit tests
-covering matching, DAG/cycle rejection, promotion/demotion, and persistence —
-see `tests/`. This is a protocol + reference implementation, not a hosted
+v0.2.0. Reference implementation is stdlib-only Python with 50 unit tests
+covering matching, DAG/cycle rejection, promotion/demotion, points/affinity/
+branch-usage gating, the skill-library importer, and persistence — see
+`tests/`. This is a protocol + reference implementation, not a hosted
 service: your tree, your file, your repo.
 
 ## License
