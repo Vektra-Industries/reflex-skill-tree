@@ -3,6 +3,24 @@
 All notable changes to this project are documented here. Versions follow
 `MAJOR.MINOR.PATCH` loosely — this is a young protocol, not a stable API yet.
 
+## [0.5.0] - 2026-10-04
+
+### Added
+- **Fusion** (`Tree.fuse()` / `rstp fuse`). Combine two or more Adept+
+  nodes into a genuinely new node — Chrono Trigger Dual/Triple Tech-style:
+  sources are never consumed, demoted, or changed. The new node's
+  `prerequisites` are set to its sources automatically, so the fusion's
+  lineage is a real DAG edge, not a separate rendering concept — it shows
+  up in `status --verbose` and the viewer (new dashed-border + ⚡ badge
+  styling) for free. Refuses to fuse unproven sources, refuses to
+  overwrite an existing node id.
+- **Self-report** (`Tree.self_report()` / `Tree.narrate()` / `rstp report
+  [--json]`). A compact progress digest — tier counts, unspent points,
+  affinity, branch levels, allocated nodes, fusion nodes, and the nodes
+  closest to their next promotion — meant to be cheap for an agent to read
+  before deciding what to practice/allocate/fuse next, instead of parsing
+  a full tree dump.
+
 ## [0.4.0] - 2026-10-04
 
 ### Added

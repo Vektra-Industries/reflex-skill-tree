@@ -30,6 +30,11 @@ Design borrows the genre's proven levers (see ../SPEC.md for citations):
   - Branch usage / leveling-by-use (Skyrim): every logged practice rep
     raises its branch's usage counter regardless of which node it hit; a
     node can require a minimum branch level before it's allocatable.
+  - Fusion (Chrono Trigger Dual/Triple Techs): two or more proven skills
+    can combine into a genuinely new node — neither source is consumed or
+    changed, same as learning a Dual Tech doesn't erase either
+    character's base move. The new node's prerequisites ARE its fusion
+    sources, so the lineage draws itself in the DAG/viewer for free.
   - Any agent is just a *starting position* on a tree it can share with
     others (PoE: "class is a vector into shared geometry"). Trees are
     plain portable JSON for exactly this reason.
@@ -122,6 +127,9 @@ class Node:
     # --- Skyrim-style branch usage gating -----------------------------------
     min_branch_level: int = 0           # gates allocation on this node's own branch usage
 
+    # --- Chrono-Trigger-style fusion lineage --------------------------------
+    fused_from: list[str] = field(default_factory=list)  # source node ids, if this node is a fusion
+
     def practice_once(self, session: str | None = None) -> str | None:
         """Log one real practice rep. Returns 'promoted' or None. Mutates in place."""
         self.practice.reps += 1
@@ -161,6 +169,7 @@ class Node:
             affinity=dict(d.get("affinity") or {}),
             affinity_requirements=dict(d.get("affinity_requirements") or {}),
             min_branch_level=int(d.get("min_branch_level", 0)),
+            fused_from=list(d.get("fused_from", [])),
         )
 
 
@@ -276,6 +285,106 @@ class Tree:
         node.allocated = True
         node.updated_at = _now()
         self.upsert(node)
+
+    def fuse(
+        self,
+        source_ids: list[str],
+        new_id: str,
+        title: str,
+        description: str = "",
+        branch: str | None = None,
+        tier: int = TierName.NOVICE,
+        **node_kwargs: Any,
+    ) -> Node:
+        """Combine two or more proven skills into a genuinely new node —
+        Chrono Trigger Dual/Tech-style: every source stays exactly as it
+        was (nothing consumed, nothing demoted), but a new, real capability
+        becomes real because both are known. Requires every source to
+        exist and be at Adept+ (an unproven skill has nothing to fuse).
+        The new node's prerequisites are set to source_ids, so the fusion's
+        lineage draws itself in the DAG and the viewer automatically.
+        Raises RSTPError if new_id already exists, if fewer than two
+        sources are given, or if any source is missing/under-tier.
+        """
+        if len(source_ids) < 2:
+            raise RSTPError("fuse() needs at least two source_ids")
+        if self.get(new_id) is not None:
+            raise RSTPError(f"{new_id} already exists — fuse() never overwrites")
+        nodes = self.nodes()
+        missing = [s for s in source_ids if s not in nodes]
+        if missing:
+            raise RSTPError(f"cannot fuse: unknown source node(s): {', '.join(missing)}")
+        under_tier = [s for s in source_ids if nodes[s].tier < TierName.ADEPT]
+        if under_tier:
+            raise RSTPError(
+                f"cannot fuse: source(s) not yet Adept+: {', '.join(under_tier)}"
+            )
+        resolved_branch = branch or nodes[source_ids[0]].branch
+        node = Node(
+            id=new_id,
+            branch=resolved_branch,
+            title=title,
+            description=description,
+            tier=tier,
+            prerequisites=list(source_ids),
+            fused_from=list(source_ids),
+            provenance={"source": "fuse", "fused_from": list(source_ids), "fused_at": _now()},
+            **node_kwargs,
+        )
+        self.upsert(node)
+        return node
+
+    def self_report(self) -> dict[str, Any]:
+        """A compact, structured progress digest meant to be cheap for an
+        agent to read before deciding what to practice/allocate/fuse next
+        — the tree's equivalent of a character sheet, not a full dump."""
+        nodes = self.nodes()
+        by_tier: dict[str, int] = {}
+        for node in nodes.values():
+            name = str(TierName(node.tier))
+            by_tier[name] = by_tier.get(name, 0) + 1
+        allocated = [nid for nid, n in nodes.items() if n.allocated]
+        fusions = [nid for nid, n in nodes.items() if n.fused_from]
+        closest: list[dict[str, Any]] = []
+        for nid, n in nodes.items():
+            if n.tier >= TierName.MASTER:
+                continue
+            need = _PROMOTE_AT.get(n.tier, 999)
+            remaining = max(0, need - n.practice.reps)
+            closest.append({"id": nid, "tier": str(TierName(n.tier)), "reps_remaining": remaining})
+        closest.sort(key=lambda c: c["reps_remaining"])
+        return {
+            "total_nodes": len(nodes),
+            "total_branches": len(self.branches),
+            "by_tier": by_tier,
+            "points_unspent": self.points,
+            "affinity": self.affinity_totals(),
+            "branch_levels": {b: self.branch_level(b) for b in self.branches},
+            "allocated": sorted(allocated),
+            "fusions": sorted(fusions),
+            "closest_to_promotion": closest[:5],
+        }
+
+    def narrate(self) -> str:
+        """Human-readable one-paragraph version of self_report() — meant
+        for a status line, not a replacement for status's full listing."""
+        r = self.self_report()
+        if r["total_nodes"] == 0:
+            return "Empty tree. Nothing seeded yet."
+        tier_bits = ", ".join(f"{v} {k}" for k, v in r["by_tier"].items())
+        lines = [
+            f"{r['total_nodes']} node(s) across {r['total_branches']} branch(es): {tier_bits}.",
+            f"{r['points_unspent']}pt unspent, {len(r['allocated'])} node(s) allocated.",
+        ]
+        if r["fusions"]:
+            lines.append(f"{len(r['fusions'])} fusion node(s): {', '.join(r['fusions'])}.")
+        if r["closest_to_promotion"]:
+            c = r["closest_to_promotion"][0]
+            if c["reps_remaining"] == 0:
+                lines.append(f"'{c['id']}' is ready to promote now.")
+            else:
+                lines.append(f"Closest to leveling: '{c['id']}' ({c['reps_remaining']} rep(s) from next tier).")
+        return " ".join(lines)
 
     def to_dict(self) -> dict[str, Any]:
         return {

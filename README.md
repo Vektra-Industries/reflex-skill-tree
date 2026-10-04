@@ -57,6 +57,17 @@ agent's own abilities:
 - **Branch usage / leveling by use** (Skyrim). Every logged practice rep
   raises its branch's usage counter, regardless of which node it hit. A node
   can require a minimum branch level before it unlocks.
+- **Fusion** (Chrono Trigger Dual/Triple Techs). Two or more proven skills
+  can combine into a genuinely new node — neither source is consumed,
+  demoted, or changed, same as learning a Dual Tech doesn't erase either
+  character's base move. The fused node's prerequisites are set to its
+  sources automatically, so the lineage shows up in `status`/the viewer for
+  free.
+- **Self-report**. A compact, structured progress digest (`Tree.self_report()`
+  / `rstp report --json`) an agent can read cheaply before deciding what to
+  do next, instead of parsing a full tree dump — tier counts, unspent
+  points, affinity, branch levels, what's allocated, what's fused, and
+  what's closest to its next promotion.
 - **Any agent is a starting position on one shared tree**, not a fork. Trees
   are plain portable JSON — fork one, merge two, or start fresh from someone
   else's already-leveled nodes.
@@ -112,6 +123,56 @@ if ok:
 save(tree, "tree.json")
 ```
 
+## Self-awareness: what an agent should read before acting
+
+Instead of parsing a full tree dump, an agent can pull a compact digest:
+
+```bash
+rstp report               # one-paragraph narration
+rstp report --json        # structured, for an agent to parse directly
+```
+
+```python
+tree = load("tree.json")
+print(tree.narrate())
+# "4 node(s) across 2 branch(es): 2 Adept, 1 Novice, 1 Seed. 3pt unspent,
+#  1 node(s) allocated. Closest to leveling: 'scales' (1 rep(s) from next tier)."
+
+report = tree.self_report()
+# {"total_nodes": 4, "by_tier": {...}, "points_unspent": 3, "affinity": {...},
+#  "branch_levels": {...}, "allocated": [...], "fusions": [...],
+#  "closest_to_promotion": [{"id": "scales", "tier": "Adept", "reps_remaining": 1}, ...]}
+```
+
+## Fusion: combining proven skills into something new
+
+Once two (or more) skills are each proven (Adept+), they can combine into a
+genuinely new node — Chrono Trigger Dual/Triple Tech-style: neither source
+is consumed, demoted, or changed. Learning the combo doesn't erase either
+base move.
+
+```bash
+rstp fuse music lead-guitar \
+  --title "Lead guitar improvisation" \
+  --description "Soloing over chord changes using scale knowledge." \
+  --from chords --from scales
+```
+
+```python
+node = tree.fuse(
+    ["chords", "scales"], "lead-guitar",
+    title="Lead guitar improvisation",
+    description="Soloing over chord changes using scale knowledge.",
+)
+# node.prerequisites == ["chords", "scales"]  -- lineage is a real DAG edge
+# node.fused_from    == ["chords", "scales"]  -- explicit fusion provenance
+# node.tier          == TierName.NOVICE       -- new, but not unproven Seed
+```
+
+The fused node's `prerequisites` are set to its sources automatically, so
+its lineage shows up in `rstp status --verbose` and in the viewer (dashed
+border + ⚡ badge) with no extra bookkeeping.
+
 ## Growing a tree from an existing skill library
 
 `rstp.importers.skills` walks any on-disk "SKILL.md with YAML frontmatter"
@@ -142,8 +203,9 @@ material doesn't re-enter the live tree.
 `viewer/index.html` is a standalone, dependency-free skill-tree renderer —
 no server, no build step, no network call, nothing leaves your machine.
 Open it in a browser, pick a `tree.json` file, and see the actual tree:
-nodes color-coded by tier, allocated nodes outlined in white, solid edges
-for AND-prerequisites, dashed edges for OR-prerequisites.
+nodes color-coded by tier, allocated nodes outlined in white, fusion nodes
+marked with a dashed border and a ⚡ badge, solid edges for AND-prerequisites
+(including fusion lineage), dashed edges for OR-prerequisites.
 
 ```bash
 # any static file server works, e.g.:
@@ -176,12 +238,13 @@ Full version history: [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Status
 
-v0.4.0. Reference implementation is stdlib-only Python with 45 unit tests
+v0.5.0. Reference implementation is stdlib-only Python with 62 unit tests
 covering the DAG/cycle rejection, promotion, points/affinity/branch-usage
-gating, the skill-library importer, and persistence — see `tests/`. Plus a
-dependency-free HTML/SVG viewer (`viewer/`), screenshot-verified against a
-real multi-branch tree. This is a protocol + reference implementation, not
-a hosted service: your tree, your file, your repo.
+gating, fusion, self-report, the skill-library importer, and persistence —
+see `tests/`. Plus a dependency-free HTML/SVG viewer (`viewer/`),
+screenshot-verified against a real multi-branch tree including a fusion
+node. This is a protocol + reference implementation, not a hosted service:
+your tree, your file, your repo.
 
 ## License
 

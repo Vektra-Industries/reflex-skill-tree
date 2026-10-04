@@ -352,5 +352,153 @@ class TestAllocatableCombined(unittest.TestCase):
             self.assertEqual(reloaded.branch_usage, tree.branch_usage)
 
 
+class TestFusion(unittest.TestCase):
+    """Chrono-Trigger-Dual-Tech-style: combine proven skills into something
+    new, without consuming or demoting either source."""
+
+    def _adept_pair(self, tree):
+        tree.upsert(make_node("a", tier=TierName.ADEPT))
+        tree.upsert(make_node("b", tier=TierName.ADEPT))
+
+    def test_fuse_requires_at_least_two_sources(self):
+        tree = Tree()
+        tree.upsert(make_node("a", tier=TierName.ADEPT))
+        with self.assertRaises(RSTPError):
+            tree.fuse(["a"], "combo", title="Combo")
+
+    def test_fuse_rejects_unknown_source(self):
+        tree = Tree()
+        tree.upsert(make_node("a", tier=TierName.ADEPT))
+        with self.assertRaises(RSTPError):
+            tree.fuse(["a", "ghost"], "combo", title="Combo")
+
+    def test_fuse_rejects_under_tier_source(self):
+        tree = Tree()
+        tree.upsert(make_node("a", tier=TierName.ADEPT))
+        tree.upsert(make_node("b", tier=TierName.NOVICE))
+        with self.assertRaises(RSTPError):
+            tree.fuse(["a", "b"], "combo", title="Combo")
+
+    def test_fuse_creates_new_node_with_prerequisites_and_lineage(self):
+        tree = Tree()
+        self._adept_pair(tree)
+        node = tree.fuse(["a", "b"], "combo", title="Combo move", description="d")
+        self.assertEqual(node.id, "combo")
+        self.assertEqual(sorted(node.prerequisites), ["a", "b"])
+        self.assertEqual(sorted(node.fused_from), ["a", "b"])
+        self.assertEqual(node.tier, TierName.NOVICE)  # default
+        self.assertIn("combo", tree.nodes())
+
+    def test_fuse_does_not_consume_or_change_sources(self):
+        tree = Tree()
+        self._adept_pair(tree)
+        tree.fuse(["a", "b"], "combo", title="Combo")
+        a = tree.get("a")
+        b = tree.get("b")
+        assert a is not None and b is not None
+        self.assertEqual(a.tier, TierName.ADEPT)  # untouched
+        self.assertEqual(b.tier, TierName.ADEPT)  # untouched
+
+    def test_fuse_refuses_to_overwrite_existing_id(self):
+        tree = Tree()
+        self._adept_pair(tree)
+        tree.fuse(["a", "b"], "combo", title="Combo")
+        with self.assertRaises(RSTPError):
+            tree.fuse(["a", "b"], "combo", title="Combo again")
+
+    def test_fuse_defaults_branch_to_first_source(self):
+        tree = Tree()
+        tree.upsert(make_node("a", branch="music", tier=TierName.ADEPT))
+        tree.upsert(make_node("b", branch="music", tier=TierName.ADEPT))
+        node = tree.fuse(["a", "b"], "combo", title="Combo")
+        self.assertEqual(node.branch, "music")
+
+    def test_fuse_explicit_branch_overrides_default(self):
+        tree = Tree()
+        self._adept_pair(tree)
+        node = tree.fuse(["a", "b"], "combo", title="Combo", branch="other")
+        self.assertEqual(node.branch, "other")
+
+    def test_fuse_three_way(self):
+        tree = Tree()
+        tree.upsert(make_node("a", tier=TierName.ADEPT))
+        tree.upsert(make_node("b", tier=TierName.ADEPT))
+        tree.upsert(make_node("c", tier=TierName.ADEPT))
+        node = tree.fuse(["a", "b", "c"], "triple", title="Triple combo")
+        self.assertEqual(sorted(node.fused_from), ["a", "b", "c"])
+
+    def test_fusion_survives_round_trip(self):
+        tree = Tree()
+        self._adept_pair(tree)
+        tree.fuse(["a", "b"], "combo", title="Combo")
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "tree.json"
+            save(tree, p)
+            reloaded = load(p)
+            node = reloaded.get("combo")
+            assert node is not None
+            self.assertEqual(sorted(node.fused_from), ["a", "b"])
+
+
+class TestSelfReport(unittest.TestCase):
+    """The tree's own compact self-awareness digest."""
+
+    def test_empty_tree_report(self):
+        tree = Tree()
+        r = tree.self_report()
+        self.assertEqual(r["total_nodes"], 0)
+        self.assertEqual(r["closest_to_promotion"], [])
+
+    def test_narrate_empty_tree(self):
+        tree = Tree()
+        self.assertIn("Empty", tree.narrate())
+
+    def test_report_counts_by_tier(self):
+        tree = Tree()
+        tree.upsert(make_node("a", tier=TierName.SEED))
+        tree.upsert(make_node("b", tier=TierName.ADEPT))
+        tree.upsert(make_node("c", tier=TierName.ADEPT))
+        r = tree.self_report()
+        self.assertEqual(r["by_tier"]["Seed"], 1)
+        self.assertEqual(r["by_tier"]["Adept"], 2)
+
+    def test_report_lists_allocated_and_fusions(self):
+        tree = Tree()
+        tree.upsert(make_node("a", tier=TierName.ADEPT))
+        tree.upsert(make_node("b", tier=TierName.ADEPT))
+        tree.fuse(["a", "b"], "combo", title="Combo")
+        a = tree.get("a")
+        assert a is not None
+        a.allocated = True
+        tree.upsert(a)
+        r = tree.self_report()
+        self.assertEqual(r["allocated"], ["a"])
+        self.assertEqual(r["fusions"], ["combo"])
+
+    def test_closest_to_promotion_sorted_ascending(self):
+        tree = Tree()
+        far = make_node("far", tier=TierName.NOVICE)       # need=2, 0 reps -> remaining=2
+        near = make_node("near", tier=TierName.ADEPT)      # need=4
+        near.practice.reps = 3                              # remaining=1, strictly closer
+        tree.upsert(far)
+        tree.upsert(near)
+        r = tree.self_report()
+        ids_in_order = [c["id"] for c in r["closest_to_promotion"]]
+        self.assertEqual(ids_in_order[0], "near")
+
+    def test_master_tier_excluded_from_closest(self):
+        tree = Tree()
+        tree.upsert(make_node("done", tier=TierName.MASTER))
+        r = tree.self_report()
+        self.assertEqual(r["closest_to_promotion"], [])
+
+    def test_narrate_mentions_fusion_count(self):
+        tree = Tree()
+        tree.upsert(make_node("a", tier=TierName.ADEPT))
+        tree.upsert(make_node("b", tier=TierName.ADEPT))
+        tree.fuse(["a", "b"], "combo", title="Combo")
+        self.assertIn("1 fusion node(s)", tree.narrate())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -61,6 +61,7 @@ prerequisites may cross branches.
 | `affinity` | object (string -> int) | Named-category points this node grants once allocated and at tier >= Adept. |
 | `affinity_requirements` | object (string -> int) | Minimum affinity totals (summed from every *other* qualifying node) required before this node is allocatable. |
 | `min_branch_level` | int | Minimum branch usage level (see §6) required before this node is allocatable. |
+| `fused_from` | string[] | If non-empty, the ids of the nodes this node was synthesized from (see §10). Empty for a hand-authored node. |
 | `skill` | string\|null | Optional pointer to external documentation (a skill name, a doc path, a URL) this node represents or references. |
 | `provenance` | object | Free-form: where this node came from (origin repo, importer, date). Not interpreted by the protocol, kept for audit. |
 | `created_at` / `updated_at` | string | ISO-8601 UTC timestamps. |
@@ -196,9 +197,51 @@ categorized skills that happen to share a bare name. Re-running an importer
 MUST NOT reset practice/tier/allocation on a node that already exists in
 the target tree — only new, not-yet-seen skills are added.
 
-## 10. Versioning
+## 10. Fusion
+
+A node MAY carry `fused_from: string[]`, recording that it was synthesized
+from two or more other nodes rather than hand-authored. `fuse(source_ids,
+new_id, title, ...)`:
+
+- MUST require at least two `source_ids`.
+- MUST require every id in `source_ids` to already exist in the tree and be
+  at tier >= 2 (Adept) — an unproven skill has nothing to contribute to a
+  fusion.
+- MUST NOT modify, demote, or remove any source node. Fusion combines
+  proven capabilities into something new; it does not consume them (unlike
+  a crafting-table item-fusion model — closer to a game unlocking a
+  combination move once both contributing moves are already known).
+- MUST set the new node's `prerequisites` to `source_ids` (so the fusion's
+  lineage is visible through the ordinary DAG/prerequisite machinery — no
+  separate rendering path is required) in addition to recording them in
+  `fused_from`.
+- MUST refuse (raise, not silently overwrite) if `new_id` already exists.
+- SHOULD default the new node's branch to the first source's branch when no
+  explicit branch is given, and its tier to Novice (1) — a fusion is a real,
+  immediately-known capability (not unproven Seed), but still something new
+  enough to deserve its own practice history rather than inheriting a
+  source's tier outright.
+
+## 11. Self-report
+
+An implementation SHOULD provide a compact, structured progress digest —
+distinct from a full tree dump — intended to be cheap for an agent to read
+before deciding what to do next (what to practice, what to allocate, what
+might be ready to fuse). At minimum this digest SHOULD include: total node/
+branch counts, a count of nodes per tier, unspent points, affinity totals,
+per-branch usage levels, the list of allocated node ids, the list of fusion
+node ids, and a short list of nodes closest to their next promotion
+threshold (by remaining practice reps needed), sorted ascending. A
+human-readable one-paragraph narration of the same digest MAY also be
+provided for direct display, separate from the structured form meant for
+programmatic consumption.
+
+## 12. Versioning
 
 This file describes protocol version 3 (`"version": 3` in a tree's root).
 v3 is a breaking change from v1/v2 (field removal, not just addition) — see
-§8. Future breaking changes to field meaning require a version bump and a
-migration note in this file.
+§8. Fusion (§10) and self-report (§11) are additive within v3 — a tree with
+no `fused_from` fields on any node is a perfectly valid v3 tree; a reader
+that doesn't recognize `fused_from` can safely ignore it. Future breaking
+changes to field meaning require a version bump and a migration note in
+this file.

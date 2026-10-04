@@ -5,8 +5,10 @@ Pure skill-tree software: nodes are skills/abilities, tiers are mastery
 levels. No guard, no triggers, no mistake-catching.
 
   rstp status [--tree PATH] [--verbose]
+  rstp report [--tree PATH] [--json]       # compact self-awareness digest
   rstp practice <node_id> [--session SID] [--tree PATH]
   rstp seed <node.json> --branch BID --id NODE_ID [--tree PATH]
+  rstp fuse <branch> <new_id> --title T --from ID --from ID [--from ID ...] [--tree PATH]
   rstp allocate <node_id> [--tree PATH]   # spend points to lock a node into the build
   rstp check [--tree PATH]                # validate the DAG, exit 1 on problems
 """
@@ -50,7 +52,8 @@ def cmd_status(args) -> int:
             else:
                 alloc_tag = f" [LOCKED: {'; '.join(reasons)}]"
             tier = TierName(node.tier)
-            lines_for_branch.append(f"  {nid}  T{int(tier)} {tier}{alloc_tag}  \"{node.title}\"")
+            fusion_tag = " [FUSION]" if node.fused_from else ""
+            lines_for_branch.append(f"  {nid}  T{int(tier)} {tier}{fusion_tag}{alloc_tag}  \"{node.title}\"")
             if args.verbose:
                 if node.description:
                     lines_for_branch.append(f"      {node.description}")
@@ -58,6 +61,8 @@ def cmd_status(args) -> int:
                     lines_for_branch.append(f"      requires: {', '.join(node.prerequisites)}")
                 if node.prerequisites_any:
                     lines_for_branch.append(f"      requires any of: {', '.join(node.prerequisites_any)}")
+                if node.fused_from:
+                    lines_for_branch.append(f"      fused from: {', '.join(node.fused_from)}")
                 if node.affinity:
                     lines_for_branch.append(f"      grants affinity: {node.affinity}")
                 if node.affinity_requirements:
@@ -98,6 +103,34 @@ def cmd_seed(args) -> int:
         return 1
     save(tree, args.tree)
     print(f"seeded {args.id} into {args.branch} at tier {TierName(node.tier)}")
+    return 0
+
+
+def cmd_report(args) -> int:
+    tree = load(args.tree)
+    if args.json:
+        print(json.dumps(tree.self_report(), indent=2))
+    else:
+        print(tree.narrate())
+    return 0
+
+
+def cmd_fuse(args) -> int:
+    tree = load(args.tree)
+    try:
+        node = tree.fuse(
+            args.source,
+            args.new_id,
+            title=args.title,
+            description=args.description or "",
+            branch=args.branch,
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    save(tree, args.tree)
+    print(f"fused {', '.join(args.source)} -> {node.id}  (T{int(node.tier)} {TierName(node.tier)}, "
+          f"branch {node.branch!r})")
     return 0
 
 
@@ -156,6 +189,21 @@ def main(argv: list[str] | None = None) -> int:
     s5.add_argument("node_id")
     s5.add_argument("--tree", type=Path, default=DEFAULT_TREE)
     s5.set_defaults(fn=cmd_allocate)
+
+    s6 = sub.add_parser("report")
+    s6.add_argument("--tree", type=Path, default=DEFAULT_TREE)
+    s6.add_argument("--json", action="store_true")
+    s6.set_defaults(fn=cmd_report)
+
+    s7 = sub.add_parser("fuse")
+    s7.add_argument("branch")
+    s7.add_argument("new_id")
+    s7.add_argument("--title", required=True)
+    s7.add_argument("--description", default="")
+    s7.add_argument("--from", dest="source", action="append", required=True,
+                     help="a source node id; pass --from at least twice")
+    s7.add_argument("--tree", type=Path, default=DEFAULT_TREE)
+    s7.set_defaults(fn=cmd_fuse)
 
     args = p.parse_args(argv)
     return args.fn(args)

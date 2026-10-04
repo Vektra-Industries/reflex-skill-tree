@@ -109,8 +109,17 @@ function render(tree) {
     rect.setAttribute("rx", 6);
     rect.setAttribute("fill", TIER_COLOR[n.tier || 0]);
     rect.setAttribute("stroke", n.allocated ? "#fff" : "#1f2937");
-    rect.setAttribute("class", "node-box" + (n.allocated ? " allocated" : ""));
+    rect.setAttribute("class", "node-box" + (n.allocated ? " allocated" : "") + (n.fused_from && n.fused_from.length ? " fusion" : ""));
     g.appendChild(rect);
+
+    if (n.fused_from && n.fused_from.length) {
+      const badge = document.createElementNS(svgNS, "text");
+      badge.setAttribute("x", pos.x + NODE_W - 16);
+      badge.setAttribute("y", pos.y + 14);
+      badge.setAttribute("class", "fusion-badge");
+      badge.textContent = "⚡";
+      g.appendChild(badge);
+    }
 
     const title = document.createElementNS(svgNS, "text");
     title.setAttribute("x", pos.x + 8);

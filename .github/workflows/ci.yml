@@ -20,9 +20,17 @@ jobs:
       - name: Smoke-test the CLI
         run: |
           python3 -m rstp seed examples/guitar.json --branch music --id guitar --tree /tmp/ci-tree.json
+          python3 -m rstp seed examples/scales.json --branch music --id scales --tree /tmp/ci-tree.json
           python3 -m rstp status --tree /tmp/ci-tree.json
           python3 -m rstp practice guitar --session ci --tree /tmp/ci-tree.json
           python3 -m rstp practice guitar --session ci --tree /tmp/ci-tree.json
+          python3 -m rstp practice scales --session ci --tree /tmp/ci-tree.json
+          python3 -m rstp practice scales --session ci --tree /tmp/ci-tree.json
           python3 -m rstp allocate guitar --tree /tmp/ci-tree.json
           python3 -m rstp status --tree /tmp/ci-tree.json --verbose
+          python3 -m rstp fuse music lead-guitar --title "Lead guitar improvisation" \
+            --from guitar --from scales --tree /tmp/ci-tree.json
+          python3 -m rstp status --tree /tmp/ci-tree.json --verbose
+          python3 -m rstp report --tree /tmp/ci-tree.json
+          python3 -m rstp report --tree /tmp/ci-tree.json --json
           python3 -m rstp check --tree /tmp/ci-tree.json

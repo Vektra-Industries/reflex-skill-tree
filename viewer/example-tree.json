@@ -19,14 +19,13 @@
           "skill": null,
           "provenance": {},
           "created_at": "",
-          "updated_at": "2026-10-04T10:26:40Z",
+          "updated_at": "2026-10-04T10:36:50Z",
           "cost": 1,
-          "allocated": true,
-          "affinity": {
-            "music-theory": 2
-          },
+          "allocated": false,
+          "affinity": {},
           "affinity_requirements": {},
-          "min_branch_level": 0
+          "min_branch_level": 0,
+          "fused_from": []
         },
         "scales": {
           "id": "scales",
@@ -43,95 +42,55 @@
           "skill": null,
           "provenance": {},
           "created_at": "",
-          "updated_at": "2026-10-04T10:26:40Z",
+          "updated_at": "2026-10-04T10:36:50Z",
           "cost": 1,
           "allocated": false,
           "affinity": {},
           "affinity_requirements": {},
-          "min_branch_level": 0
+          "min_branch_level": 0,
+          "fused_from": []
         },
-        "barre": {
-          "id": "barre",
+        "lead-guitar": {
+          "id": "lead-guitar",
           "branch": "music",
-          "title": "Barre chords",
-          "description": "Movable shapes up the neck.",
-          "tier": 0,
+          "title": "Lead guitar improvisation",
+          "description": "Soloing over chord changes using scale knowledge.",
+          "tier": 1,
           "prerequisites": [
-            "chords"
-          ],
-          "prerequisites_any": [],
-          "practice": {
-            "reps": 0,
-            "sessions_seen": []
-          },
-          "skill": null,
-          "provenance": {},
-          "created_at": "",
-          "updated_at": "",
-          "cost": 2,
-          "allocated": false,
-          "affinity": {},
-          "affinity_requirements": {},
-          "min_branch_level": 0
-        },
-        "fingerstyle": {
-          "id": "fingerstyle",
-          "branch": "music",
-          "title": "Fingerstyle",
-          "description": "Travis picking, arpeggios.",
-          "tier": 0,
-          "prerequisites": [],
-          "prerequisites_any": [
             "chords",
             "scales"
           ],
+          "prerequisites_any": [],
           "practice": {
             "reps": 0,
             "sessions_seen": []
           },
           "skill": null,
-          "provenance": {},
+          "provenance": {
+            "source": "fuse",
+            "fused_from": [
+              "chords",
+              "scales"
+            ],
+            "fused_at": "2026-10-04T10:36:50Z"
+          },
           "created_at": "",
           "updated_at": "",
-          "cost": 2,
-          "allocated": false,
-          "affinity": {},
-          "affinity_requirements": {},
-          "min_branch_level": 0
-        }
-      }
-    },
-    "cooking": {
-      "title": "cooking",
-      "nodes": {
-        "sourdough": {
-          "id": "sourdough",
-          "branch": "cooking",
-          "title": "Sourdough starter",
-          "description": "Feed and maintain a culture.",
-          "tier": 1,
-          "prerequisites": [],
-          "prerequisites_any": [],
-          "practice": {
-            "reps": 1,
-            "sessions_seen": []
-          },
-          "skill": null,
-          "provenance": {},
-          "created_at": "",
-          "updated_at": "2026-10-04T10:26:40Z",
           "cost": 1,
           "allocated": false,
           "affinity": {},
           "affinity_requirements": {},
-          "min_branch_level": 0
+          "min_branch_level": 0,
+          "fused_from": [
+            "chords",
+            "scales"
+          ]
         }
       }
     }
   },
   "points": 4,
   "branch_usage": {
-    "music": 4,
-    "cooking": 1
+    "music": 4
   }
 }
