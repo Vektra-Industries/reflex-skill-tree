@@ -1,7 +1,7 @@
 [project]
 name = "rstp"
-version = "0.2.0"
-description = "Reflex Skill Tree Protocol — open, model-agnostic mistake-prevention for any AI agent"
+version = "0.3.0"
+description = "Reflex Skill Tree Protocol — an open, model-agnostic skill tree for AI agents"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.9"

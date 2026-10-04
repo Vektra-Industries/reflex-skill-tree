@@ -1,5 +1,7 @@
 """Real tests for rstp.tree — stdlib unittest, no external deps.
 
+Pure skill-tree software: no triggers, no guard, no mistake-catching.
+
 Run: python3 -m unittest discover -s tests -v
 """
 from __future__ import annotations
@@ -11,17 +13,15 @@ from pathlib import Path
 from rstp.tree import CycleError, Node, RSTPError, Tree, TierName, load, save, validate_dag
 
 
-def make_node(node_id="n1", branch="b1", prereqs=None, tier=TierName.SEED, **kw) -> Node:
+def make_node(node_id="n1", branch="b1", prereqs=None, prereqs_any=None, tier=TierName.SEED, **kw) -> Node:
     return Node(
         id=node_id,
         branch=branch,
         title=kw.get("title", f"title-{node_id}"),
-        pitfall=kw.get("pitfall", "pitfall"),
-        do=kw.get("do", "do"),
+        description=kw.get("description", "a skill"),
         tier=tier,
         prerequisites=prereqs or [],
-        triggers=kw.get("triggers", {"tool_names": ["write_file"], "path_glob": ["*.env"]}),
-        always_guard_tools=kw.get("always_guard_tools", []),
+        prerequisites_any=prereqs_any or [],
         cost=kw.get("cost", 1),
         affinity=kw.get("affinity", {}),
         affinity_requirements=kw.get("affinity_requirements", {}),
@@ -29,79 +29,42 @@ def make_node(node_id="n1", branch="b1", prereqs=None, tier=TierName.SEED, **kw)
     )
 
 
-class TestMatching(unittest.TestCase):
-    def test_matches_on_tool_and_glob(self):
-        n = make_node()
-        self.assertTrue(n.matches("write_file", "write_file /home/x/.env"))
-
-    def test_no_match_wrong_tool(self):
-        n = make_node()
-        self.assertFalse(n.matches("read_file", "read_file /home/x/.env"))
-
-    def test_no_match_wrong_path(self):
-        n = make_node()
-        self.assertFalse(n.matches("write_file", "write_file /home/x/notes.md"))
-
-    def test_tool_only_trigger_matches_any_text(self):
-        n = make_node(triggers={"tool_names": ["terminal"], "path_glob": []})
-        self.assertTrue(n.matches("terminal", "anything at all"))
-
-
-class TestEvidencePromotion(unittest.TestCase):
-    def test_seed_promotes_to_novice_after_one_prevented(self):
+class TestPracticePromotion(unittest.TestCase):
+    def test_seed_promotes_to_novice_after_one_rep(self):
         n = make_node(tier=TierName.SEED)
-        result = n.record("prevented")
+        result = n.practice_once()
         self.assertEqual(result, "promoted")
         self.assertEqual(n.tier, TierName.NOVICE)
 
-    def test_novice_needs_two_to_reach_adept(self):
+    def test_novice_needs_two_reps_to_reach_adept(self):
         n = make_node(tier=TierName.NOVICE)
-        self.assertIsNone(n.record("prevented"))  # 1/2, no promotion yet
+        self.assertIsNone(n.practice_once())  # 1/2, no promotion yet
         self.assertEqual(n.tier, TierName.NOVICE)
-        result = n.record("prevented")  # 2/2
+        result = n.practice_once()  # 2/2
         self.assertEqual(result, "promoted")
         self.assertEqual(n.tier, TierName.ADEPT)
-
-    def test_ineffective_resets_the_promotion_clock(self):
-        n = make_node(tier=TierName.NOVICE)
-        n.record("prevented")  # 1/2
-        n.record("ineffective")
-        # still needs a fresh run of 2 prevented with zero ineffective since
-        result = n.record("prevented")  # prevented=2 but ineffective=1 now -> no promotion
-        self.assertIsNone(result)
-        self.assertEqual(n.tier, TierName.NOVICE)
-
-    def test_adept_demotes_on_ineffective(self):
-        n = make_node(tier=TierName.ADEPT)
-        result = n.record("ineffective")
-        self.assertEqual(result, "demoted")
-        self.assertEqual(n.tier, TierName.NOVICE)
-
-    def test_seed_does_not_demote_below_zero(self):
-        n = make_node(tier=TierName.SEED)
-        result = n.record("ineffective")
-        self.assertIsNone(result)
-        self.assertEqual(n.tier, TierName.SEED)
 
     def test_master_does_not_promote_further(self):
         n = make_node(tier=TierName.MASTER)
         result = None
         for _ in range(20):
-            result = n.record("prevented")
+            result = n.practice_once()
         self.assertIsNone(result)
         self.assertEqual(n.tier, TierName.MASTER)
 
-    def test_unknown_outcome_rejected(self):
-        n = make_node()
-        with self.assertRaises(RSTPError):
-            n.record("maybe")
-
     def test_session_dedup(self):
         n = make_node()
-        n.record("prevented", session="s1")
-        n.record("prevented", session="s1")
-        n.record("prevented", session="s2")
-        self.assertEqual(n.evidence.sessions_seen, ["s1", "s2"])
+        n.practice_once(session="s1")
+        n.practice_once(session="s1")
+        n.practice_once(session="s2")
+        self.assertEqual(n.practice.sessions_seen, ["s1", "s2"])
+
+    def test_reps_accumulate_across_calls(self):
+        n = make_node()
+        n.practice_once()
+        n.practice_once()
+        n.practice_once()
+        self.assertEqual(n.practice.reps, 3)
 
 
 class TestDAG(unittest.TestCase):
@@ -140,6 +103,14 @@ class TestDAG(unittest.TestCase):
         problems = validate_dag(tree)
         self.assertTrue(any("ghost" in p for p in problems))
 
+    def test_or_group_cycle_detected(self):
+        tree = Tree()
+        a = make_node("a", prereqs_any=["b"])
+        b = make_node("b", prereqs_any=["a"])
+        tree.upsert(b)
+        with self.assertRaises(CycleError):
+            tree.upsert(a)
+
 
 class TestUnlock(unittest.TestCase):
     def test_no_prereq_always_unlocked(self):
@@ -154,10 +125,24 @@ class TestUnlock(unittest.TestCase):
         self.assertFalse(tree.unlocked("b"))
         a = tree.get("a")
         assert a is not None
-        a.record("prevented")  # NOVICE -> ADEPT (needs 2, but already has evidence)
-        a.record("prevented")
+        a.practice_once()  # NOVICE -> ADEPT (needs 2, has 1 already)
+        a.practice_once()
         tree.upsert(a)
         self.assertTrue(tree.unlocked("b"))
+
+    def test_or_group_satisfied_by_either(self):
+        tree = Tree()
+        tree.upsert(make_node("a", tier=TierName.ADEPT))
+        tree.upsert(make_node("b", tier=TierName.SEED))
+        tree.upsert(make_node("c", prereqs_any=["a", "b"]))
+        self.assertTrue(tree.unlocked("c"))  # a alone is enough
+
+    def test_or_group_fails_when_none_satisfied(self):
+        tree = Tree()
+        tree.upsert(make_node("a", tier=TierName.SEED))
+        tree.upsert(make_node("b", tier=TierName.SEED))
+        tree.upsert(make_node("c", prereqs_any=["a", "b"]))
+        self.assertFalse(tree.unlocked("c"))
 
     def test_unknown_node_raises(self):
         tree = Tree()
@@ -168,7 +153,7 @@ class TestUnlock(unittest.TestCase):
 class TestPersistence(unittest.TestCase):
     def test_round_trip(self):
         tree = Tree()
-        tree.upsert(make_node("a", always_guard_tools=["write_file"]))
+        tree.upsert(make_node("a", description="learn to do a thing"))
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "tree.json"
             save(tree, p)
@@ -176,7 +161,7 @@ class TestPersistence(unittest.TestCase):
             node = reloaded.get("a")
             self.assertIsNotNone(node)
             assert node is not None
-            self.assertEqual(node.always_guard_tools, ["write_file"])
+            self.assertEqual(node.description, "learn to do a thing")
 
     def test_load_missing_file_returns_empty_tree(self):
         tree = load("/tmp/this-path-should-not-exist-rstp-test.json")
@@ -201,26 +186,19 @@ class TestPersistence(unittest.TestCase):
 
 
 class TestPoints(unittest.TestCase):
-    """Diablo 4 Paragon-style: evidence earns points, allocation spends them."""
+    """Diablo 4 Paragon-style: practice earns points, allocation spends them."""
 
-    def test_recording_prevented_earns_a_point(self):
+    def test_practice_earns_a_point(self):
         tree = Tree()
         tree.upsert(make_node("a"))
         self.assertEqual(tree.points, 0)
-        tree.record("a", "prevented")
+        tree.practice("a")
         self.assertEqual(tree.points, 1)
-
-    def test_ineffective_and_unknown_earn_nothing(self):
-        tree = Tree()
-        tree.upsert(make_node("a"))
-        tree.record("a", "ineffective")
-        tree.record("a", "unknown")
-        self.assertEqual(tree.points, 0)
 
     def test_allocate_spends_points_and_marks_allocated(self):
         tree = Tree()
         tree.upsert(make_node("a", cost=1))
-        tree.record("a", "prevented")  # earns 1pt
+        tree.practice("a")  # earns 1pt
         tree.allocate("a")
         node = tree.get("a")
         assert node is not None
@@ -230,14 +208,14 @@ class TestPoints(unittest.TestCase):
     def test_allocate_fails_without_enough_points(self):
         tree = Tree()
         tree.upsert(make_node("a", cost=5))
-        tree.record("a", "prevented")  # only 1pt, need 5
+        tree.practice("a")  # only 1pt, need 5
         with self.assertRaises(RSTPError):
             tree.allocate("a")
 
     def test_allocate_twice_fails(self):
         tree = Tree()
         tree.upsert(make_node("a", cost=1))
-        tree.record("a", "prevented")
+        tree.practice("a")
         tree.allocate("a")
         with self.assertRaises(RSTPError):
             tree.allocate("a")
@@ -304,25 +282,25 @@ class TestAffinity(unittest.TestCase):
 class TestBranchUsage(unittest.TestCase):
     """Skyrim-style: a branch levels from real usage, not from declaring intent."""
 
-    def test_usage_increments_on_every_log_regardless_of_outcome(self):
+    def test_usage_increments_on_every_practice_call(self):
         tree = Tree()
         tree.upsert(make_node("a", branch="combat"))
-        tree.record("a", "prevented")
-        tree.record("a", "ineffective")
-        tree.record("a", "unknown")
+        tree.practice("a")
+        tree.practice("a")
+        tree.practice("a")
         self.assertEqual(tree.branch_usage["combat"], 3)
 
     def test_branch_level_follows_usage_per_level_constant(self):
         tree = Tree()
         tree.upsert(make_node("a", branch="combat"))
-        for _ in range(5):
-            tree.record("a", "unknown")  # 5 = _USAGE_PER_LEVEL, earns no points
+        for _ in range(5):  # 5 = _USAGE_PER_LEVEL
+            tree.practice("a")
         self.assertEqual(tree.branch_level("combat"), 1)
 
     def test_branch_level_zero_before_threshold(self):
         tree = Tree()
         tree.upsert(make_node("a", branch="combat"))
-        tree.record("a", "unknown")
+        tree.practice("a")
         self.assertEqual(tree.branch_level("combat"), 0)
 
     def test_min_branch_level_gates_allocation(self):
@@ -333,7 +311,7 @@ class TestBranchUsage(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue(any("usage level" in r for r in reasons))
         for _ in range(5):
-            tree.record("a", "unknown")
+            tree.practice("a")
         ok, reasons = tree.allocatable("a")
         self.assertTrue(ok, reasons)
 
@@ -341,13 +319,13 @@ class TestBranchUsage(unittest.TestCase):
         tree = Tree()
         tree.upsert(make_node("a", branch="combat"))
         tree.upsert(make_node("b", branch="stealth"))
-        tree.record("a", "prevented")
+        tree.practice("a")
         self.assertEqual(tree.branch_usage.get("stealth", 0), 0)
 
 
 class TestAllocatableCombined(unittest.TestCase):
-    """All three v0.2 gates (prereqs + affinity + branch level) plus points,
-    combined — proving they compose rather than silently overriding each other."""
+    """All gates (prereqs + affinity + branch level + points), combined —
+    proving they compose rather than silently overriding each other."""
 
     def test_all_gates_must_pass_at_once(self):
         tree = Tree()
@@ -365,7 +343,7 @@ class TestAllocatableCombined(unittest.TestCase):
     def test_round_trip_preserves_points_and_usage(self):
         tree = Tree()
         tree.upsert(make_node("a", cost=1))
-        tree.record("a", "prevented")
+        tree.practice("a")
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "tree.json"
             save(tree, p)

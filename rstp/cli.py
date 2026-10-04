@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """rstp — command-line interface for a Reflex Skill Tree.
 
-  rstp status [--tree PATH] [--match "<tool> <text>"]
-  rstp log <node_id> <prevented|ineffective|unknown> [--session SID] [--tree PATH]
+Pure skill-tree software: nodes are skills/abilities, tiers are mastery
+levels. No guard, no triggers, no mistake-catching.
+
+  rstp status [--tree PATH] [--verbose]
+  rstp practice <node_id> [--session SID] [--tree PATH]
   rstp seed <node.json> --branch BID --id NODE_ID [--tree PATH]
-  rstp allocate <node_id> [--tree PATH]   # spend points to enforce a node
+  rstp allocate <node_id> [--tree PATH]   # spend points to lock a node into the build
   rstp check [--tree PATH]                # validate the DAG, exit 1 on problems
 """
 from __future__ import annotations
@@ -29,24 +32,15 @@ def cmd_status(args) -> int:
     if not nodes:
         print(f"(empty tree at {args.tree})")
         return 0
-    matched_any = False
     for bid, branch in tree.branches.items():
         branch_nodes = {nid: n for nid, n in nodes.items() if n.branch == bid}
         if not branch_nodes:
             continue
-        lines_for_branch: list[str] = []
+        if args.branch and bid != args.branch:
+            continue
         level = tree.branch_level(bid)
+        lines_for_branch: list[str] = []
         for nid, node in branch_nodes.items():
-            hit = True
-            if args.match:
-                parts = args.match.split(" ", 1)
-                tool = parts[0]
-                text = args.match
-                hit = node.matches(tool, text)
-                if not hit:
-                    continue
-                matched_any = True
-            guard_tag = " [ALWAYS-GUARD]" if node.always_guard_tools else ""
             ok, reasons = tree.allocatable(nid)
             if node.allocated:
                 alloc_tag = " [ALLOCATED]"
@@ -55,33 +49,28 @@ def cmd_status(args) -> int:
             else:
                 alloc_tag = f" [LOCKED: {'; '.join(reasons)}]"
             tier = TierName(node.tier)
-            lines_for_branch.append(f"  {nid}  T{int(tier)} {tier}{guard_tag}{alloc_tag}  \"{node.title}\"")
-            if args.match:
-                lines_for_branch.append(f"      pitfall: {node.pitfall}")
-                lines_for_branch.append(f"      do:      {node.do}")
+            lines_for_branch.append(f"  {nid}  T{int(tier)} {tier}{alloc_tag}  \"{node.title}\"")
+            if args.verbose:
+                if node.description:
+                    lines_for_branch.append(f"      {node.description}")
                 if node.prerequisites:
                     lines_for_branch.append(f"      requires: {', '.join(node.prerequisites)}")
+                if node.prerequisites_any:
+                    lines_for_branch.append(f"      requires any of: {', '.join(node.prerequisites_any)}")
                 if node.affinity:
                     lines_for_branch.append(f"      grants affinity: {node.affinity}")
                 if node.affinity_requirements:
                     lines_for_branch.append(f"      needs affinity: {node.affinity_requirements}")
-            ev = node.evidence
-            lines_for_branch.append(
-                f"      evidence: prevented={ev.prevented} ineffective={ev.ineffective} unknown={ev.unknown}"
-            )
-        if not lines_for_branch:
-            continue  # nothing in this branch matched --match; skip the header too
+            lines_for_branch.append(f"      practice reps: {node.practice.reps}")
         print(f"\n== {branch.get('title', bid)} (usage level {level}) ==")
         print("\n".join(lines_for_branch))
-    if args.match and not matched_any:
-        print(f'(no node matches "{args.match}")')
     return 0
 
 
-def cmd_log(args) -> int:
+def cmd_practice(args) -> int:
     tree = load(args.tree)
     try:
-        result = tree.record(args.node_id, args.outcome, args.session)
+        result = tree.practice(args.node_id, args.session)
     except Exception as e:  # noqa: BLE001 - CLI boundary, report and exit non-zero
         print(f"error: {e}", file=sys.stderr)
         return 1
@@ -90,11 +79,10 @@ def cmd_log(args) -> int:
     assert updated is not None  # just wrote it above; narrows for the type checker
     tier = TierName(updated.tier)
     suffix = f" -> {result} to T{int(tier)} {tier}" if result else ""
-    print(f"logged {args.outcome} for {args.node_id}{suffix}  (wallet: {tree.points}pt, "
+    print(f"logged practice for {args.node_id}{suffix}  (wallet: {tree.points}pt, "
           f"branch {updated.branch!r} usage level {tree.branch_level(updated.branch)})")
     if tier == TierName.MASTER:
-        print(f"*** {args.node_id} reached Master. Fold its rule into standing instructions, "
-              f"then remove it from the tree. ***")
+        print(f"*** {args.node_id} reached Master. It's fully learned. ***")
     return 0
 
 
@@ -141,15 +129,15 @@ def main(argv: list[str] | None = None) -> int:
 
     s1 = sub.add_parser("status")
     s1.add_argument("--tree", type=Path, default=DEFAULT_TREE)
-    s1.add_argument("--match")
+    s1.add_argument("--branch")
+    s1.add_argument("--verbose", "-v", action="store_true")
     s1.set_defaults(fn=cmd_status)
 
-    s2 = sub.add_parser("log")
+    s2 = sub.add_parser("practice")
     s2.add_argument("node_id")
-    s2.add_argument("outcome", choices=["prevented", "ineffective", "unknown"])
     s2.add_argument("--session")
     s2.add_argument("--tree", type=Path, default=DEFAULT_TREE)
-    s2.set_defaults(fn=cmd_log)
+    s2.set_defaults(fn=cmd_practice)
 
     s3 = sub.add_parser("seed")
     s3.add_argument("node_file")

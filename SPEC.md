@@ -1,22 +1,27 @@
-# RSTP v1 — Reflex Skill Tree Protocol
+# RSTP v3 — Reflex Skill Tree Protocol
 
-Status: Draft, v1. This document is the protocol; `rstp/` in this repo is one
+Status: Draft, v3. This document is the protocol; `rstp/` in this repo is one
 conforming implementation (Python, stdlib-only). Anyone may implement RSTP in
 any language against this spec — a JSON file and a few pure functions is the
 entire interface surface.
+
+RSTP is **pure skill-tree software**: it tracks an agent's own capabilities
+leveling up over time, the same shape as a video-game skill tree. It is not
+a mistake-catcher, a guard, or a safety hook — see §7 for why that framing
+was dropped.
 
 ## 1. Goals
 
 - **Portable.** A tree is one JSON file. No database, no server, no plugin
   API, no framework dependency.
-- **Model-agnostic.** The protocol does not assume any particular model,
-  agent framework, or tool-calling format. It only assumes: *something* calls
-  tools/actions by name, with some descriptive text (a path, a command), and
-  *something* can read/write a JSON file before and after that call.
-- **Evidence-driven.** Nothing in the tree reaches a strong enforcement tier
-  without a logged, timestamped, real outcome. No self-certification.
-- **Honest about its own limits.** A node that stops working says so
-  (demotion) instead of silently staying trusted.
+- **Model-agnostic.** The protocol does not assume any particular model or
+  agent framework. It only assumes: something can read/write a JSON file and
+  call a small script or library function to log practice.
+- **Practice-driven.** Nothing in the tree reaches a high tier without a
+  logged, timestamped, real practice rep. No self-certification.
+- **A real economy, not an unlimited one.** Points, affinity, and branch
+  usage are all scarce/earned, so growing the tree means actually using the
+  skills in it — not declaring intent.
 
 ## 2. Data model
 
@@ -24,194 +29,176 @@ entire interface surface.
 
 ```json
 {
-  "version": 1,
+  "version": 3,
   "branches": {
     "<branch_id>": {
       "title": "<human label>",
       "nodes": { "<node_id>": { ...Node } }
     }
-  }
+  },
+  "points": 0,
+  "branch_usage": { "<branch_id>": 0 }
 }
 ```
 
-`branches` partitions nodes by topic (e.g. `credential-ops`, `git-safety`).
-Partitioning is purely organizational — prerequisites may cross branches.
+`branches` partitions nodes by topic (e.g. `music`, `cooking`,
+`software-development`). Partitioning is purely organizational —
+prerequisites may cross branches.
 
 ### 2.2 Node
 
 | Field | Type | Meaning |
 |---|---|---|
 | `title` | string | Short human label. |
-| `pitfall` | string | What goes wrong, described concretely. |
-| `do` | string | The concrete corrective action. |
+| `description` | string | What the skill/ability actually is or does. |
 | `tier` | int 0-4 | See §3. Default 0 (Seed). |
-| `prerequisites` | string[] | Node IDs that must be at tier >= 2 (Adept) before this node is considered unlocked. Default `[]`. |
-| `triggers.tool_names` | string[] | Tool/action names this node watches. Empty = matches by path/text alone against any tool. |
-| `triggers.path_glob` | string[] | Glob patterns matched against the call's descriptive text (path, command line, etc). Empty + non-empty `tool_names` = matches on tool name alone. |
-| `always_guard_tools` | string[] | Keystone behavior (§3, tier 3). Tool names in this list stay enforced for this node even once any linked material has already been consulted this session. |
-| `evidence.prevented` / `.ineffective` / `.unknown` | int | Outcome counters. See §4. |
-| `evidence.sessions_seen` | string[] | Opaque session identifiers that have logged an outcome, for cross-session frequency awareness. |
-| `skill` | string\|null | Optional pointer to external documentation (a skill name, a doc path, a URL) an agent should consult for this node. |
-| `provenance` | object | Free-form: where this node's evidence came from (origin repo, PR, test name, date). Not interpreted by the protocol, kept for audit. |
+| `prerequisites` | string[] | Node IDs that must ALL be at tier >= 2 (Adept) before this node is unlocked. Default `[]`. |
+| `prerequisites_any` | string[] | Node IDs where at least ONE must be at tier >= 2 (Adept). Default `[]`. Evaluated in addition to `prerequisites` (both must pass). |
+| `practice.reps` | int | Count of logged practice reps. See §4. |
+| `practice.sessions_seen` | string[] | Opaque session identifiers that have logged a practice rep, for cross-session frequency awareness. |
+| `cost` | int | Skill points required to allocate this node. Default 1. |
+| `allocated` | bool | Whether points have actually been spent on this node. Default false. |
+| `affinity` | object (string -> int) | Named-category points this node grants once allocated and at tier >= Adept. |
+| `affinity_requirements` | object (string -> int) | Minimum affinity totals (summed from every *other* qualifying node) required before this node is allocatable. |
+| `min_branch_level` | int | Minimum branch usage level (see §6) required before this node is allocatable. |
+| `skill` | string\|null | Optional pointer to external documentation (a skill name, a doc path, a URL) this node represents or references. |
+| `provenance` | object | Free-form: where this node came from (origin repo, importer, date). Not interpreted by the protocol, kept for audit. |
 | `created_at` / `updated_at` | string | ISO-8601 UTC timestamps. |
-
-A **matching call** is any (tool_name, descriptive_text) pair such that:
-`tool_names` is empty OR tool_name is in `tool_names`, AND
-`path_glob` is empty (and `tool_names` non-empty) OR descriptive_text matches
-one of the globs (as a substring match: `fnmatch(text, f"*{glob}*")`).
 
 ## 3. Tiers
 
-Tiers are the enforcement contract, not cosmetic levels. An implementation
-MUST treat them as follows:
+Tiers are mastery labels, nothing more. There is no enforcement contract —
+RSTP does not call tools, intercept calls, or gate any agent action. A node
+reaching a given tier means only that the practice-count threshold for that
+tier has been met.
 
-| Tier | Name | An agent consulting this node MUST |
+| Tier | Name | Meaning |
 |---|---|---|
-| 0 | Seed | Nothing required. Informational only. |
-| 1 | Novice | Surface the `pitfall`/`do` to itself before acting (a reminder), but may still proceed against its own judgment. |
-| 2 | Adept | Treat `do` as a hard constraint for the exact matching call — not merely a suggestion. |
-| 3 | Guardian | Same as Adept, AND the constraint applies even if the agent has already consulted the node's `skill` (or any equivalent material) earlier in the same session. A node only reaches this behavior for tool names listed in `always_guard_tools`; other matching tools behave as Adept. |
-| 4 | Master | The lesson is considered proven durably. Implementations SHOULD prompt folding the rule into the agent's standing instructions (system prompt, memory, docs) and removing the node from the active tree — a Master node is a graduation, not a permanent resident. |
+| 0 | Seed | Drafted, unpracticed. |
+| 1 | Novice | Practiced once. |
+| 2 | Adept | Practiced repeatedly. Starts granting its `affinity` if allocated. |
+| 3 | Expert | Deeply practiced. |
+| 4 | Master | Fully mastered — the ceiling. Does not promote further. |
 
 Tier is an integer 0-4; implementations MUST reject out-of-range values.
 
-## 4. Evidence and promotion
+## 4. Practice and promotion
 
-After any matching call actually happens, the calling agent SHOULD log one
-outcome:
+A node promotes one tier when its cumulative practice rep count (since the
+last tier change) reaches a threshold:
 
-- `prevented` — the node's `do` (or the agent's own judgment informed by it)
-  avoided the pitfall.
-- `ineffective` — the pitfall happened anyway despite the node matching.
-- `unknown` — the call matched but the outcome could not be determined.
-
-### 4.1 Promotion rule (reference values; implementations MAY tune, MUST document any change)
-
-A node promotes one tier when its cumulative `prevented` count (since the
-last tier change) reaches a threshold AND `ineffective` is 0 since that same
-point:
-
-| From tier | Prevented needed to promote |
+| From tier | Reps needed to promote |
 |---|---|
 | Seed (0) | 1 |
 | Novice (1) | 2 |
 | Adept (2) | 4 |
-| Guardian (3) | 8 |
+| Expert (3) | 8 |
 
-Master (4) does not promote further.
+Master (4) does not promote further. There is no demotion mechanism in v3 —
+a skill that's been practiced enough to reach a tier stays there; RSTP does
+not model skill decay.
 
-### 4.2 Demotion rule
+### 4.1 Unlock (DAG gating)
 
-Any `ineffective` outcome on a node at tier >= 2 (Adept or higher) demotes it
-one tier immediately. There is no grace period — a single failure at a tier
-that implies a hard rule is reason enough to distrust it until re-proven.
-Nodes at Seed or Novice do not demote further on `ineffective` (there is
-nowhere below Seed to go).
+A node is **unlocked** iff:
+- every id in `prerequisites` resolves to a node at tier >= 2 (Adept), AND
+- if `prerequisites_any` is non-empty, at least one id in it resolves to a
+  node at tier >= 2 (Adept).
 
-### 4.3 Unlock (DAG gating)
+Implementations MAY surface locked nodes differently in status output but
+MUST NOT silently drop them from the tree.
 
-A node is **unlocked** iff every id in its `prerequisites` resolves to a node
-at tier >= 2 (Adept). Implementations MAY surface locked nodes differently in
-status output but MUST NOT silently drop them from the tree.
+## 5. Points (an allocation economy)
 
-## 5. Graph integrity
+A `Tree` carries a `points` integer wallet. Every logged practice rep
+credits the wallet by a fixed amount (reference value: 1), regardless of
+which node it hit. A `Node` carries a `cost` (reference default: 1) and an
+`allocated` boolean. `allocate(node_id)` is the only way to set
+`allocated = True`; it MUST check every gate in §6.3 and MUST decrement the
+wallet by exactly `cost`, atomically — either the full allocation succeeds
+(gates pass, points spent, flag set) or nothing changes. A node that is
+merely practiced but never allocated is tracked progress, not yet a chosen
+part of the build — allocation is the explicit "I'm keeping this" action,
+same as spending a Paragon point.
 
-`prerequisites` form a directed graph (node -> prerequisite). Implementations
-MUST reject (raise, refuse to save) any write that would introduce a cycle.
-A conforming implementation detects cycles via standard DFS coloring (white/
-gray/black) or an equivalent algorithm, and MUST name the exact cycle found
-in its error when raising. Dangling prerequisites (pointing at a node id that
-does not exist) are NOT a cycle and MAY be tolerated during incremental
-building, but MUST be reported by a `validate`/`check` operation before the
-tree is trusted.
+## 6. Affinity and branch usage
 
-## 6. What RSTP deliberately does not do
+### 6.1 Affinity (Node)
 
-- It does not call tools, intercept calls, or hook into any runtime. The
-  calling agent is responsible for checking the tree before acting and
-  logging the outcome after.
-- It does not include a scheduler, server, or multi-writer concurrency model.
-  A tree file is assumed single-writer per session; merge conflicts across
-  sessions are a file-merge problem (e.g. plain `git merge` on JSON, or an
-  application-level reconciliation step), not a protocol concern in v1.
-- It does not interpret `skill` or `provenance` beyond storing them as given.
+A `Node` carries `affinity: dict[str, int]`, named-category points it
+grants once two conditions hold simultaneously: it is `allocated` AND its
+`tier >= Adept`. `affinity_totals()` sums these across every qualifying
+node, by category. A `Node` carries `affinity_requirements: dict[str, int]`;
+it is not allocatable while any required category's total (from every
+*other* qualifying node) is below the stated minimum.
 
-## 7. Compatibility note: vektra-reflex
-
-[`vektra-reflex`](https://github.com/Vektra-Industries/vektra-reflex) is a
-Hermes-plugin implementation of a closely related idea (a `Lesson` record
-with `title`/`pitfall`/`do`/`skill`/`triggers`/`mode`/`guard_until`/
-`always_guard_tools`, enforced through `pre_tool_call`/`post_tool_call`
-hooks). RSTP generalizes the same lesson shape into a protocol with no
-framework dependency; the `mode` concept (`remind`/`guard`/`approve`) maps
-onto RSTP tiers 1/2/3 respectively, and `always_guard_tools` ports over with
-an identical name and meaning.
-
-## 9. v2 extensions: points, affinity, branch usage
-
-Schema version 2 (`"version": 2`) adds three independent gating/economy
-mechanisms, each inspired by a specific proven game system (see README for
-attribution). All three are additive to v1: a v1 tree loads and behaves
-identically under a v2 implementation with points=0, no affinity, and no
-usage requirements — nothing here changes v1 node/tier semantics.
-
-### 9.1 Points (an allocation economy)
-
-A `Tree` carries a `points` integer wallet. Every `record()` call with
-outcome `prevented` credits the wallet by a fixed amount (reference value:
-1). A `Node` carries a `cost` (reference default: 1) and an `allocated`
-boolean. `Tree.allocate(node_id)` is the only way to set `allocated = True`;
-it MUST check every gate in §9.4 and MUST decrement the wallet by exactly
-`cost`, atomically — either the full allocation succeeds (gates pass, points
-spent, flag set) or nothing changes. Nodes that are merely recorded but never
-allocated carry no enforcement weight beyond what their raw `tier` implies;
-allocation is the explicit "I'm turning this on" action, same as spending a
-Paragon point.
-
-### 9.2 Affinity (Node)
-
-A `Node` carries `affinity: dict[str, int]`, a set of named-category points
-it grants once two conditions hold simultaneously: it is `allocated` AND its
-`tier >= ADEPT`. `Tree.affinity_totals()` sums these across every
-qualifying node, by category. A `Node` carries `affinity_requirements:
-dict[str, int]`; it is not allocatable while any required category's total
-(from every *other* qualifying node) is below the stated minimum.
-
-### 9.3 Branch usage (leveling by use)
+### 6.2 Branch usage (leveling by use)
 
 A `Tree` carries `branch_usage: dict[str, int]`, one raw counter per branch.
-Every `record()` call increments its node's branch counter by 1, regardless
-of outcome — matching a call at all is "use," independent of whether that
-specific call went well. `Tree.branch_level(branch)` is
-`branch_usage[branch] // USAGE_PER_LEVEL` (reference constant: 5). A `Node`
-carries `min_branch_level`; it is not allocatable until its own branch's
-level meets that minimum.
+Every logged practice rep increments its node's branch counter by 1,
+regardless of which node it hit — any real use of the branch counts.
+`branch_level(branch)` is `branch_usage[branch] // USAGE_PER_LEVEL`
+(reference constant: 5). A `Node` carries `min_branch_level`; it is not
+allocatable until its own branch's level meets that minimum.
 
-### 9.4 Combined allocation gate
+### 6.3 Combined allocation gate
 
-`Tree.allocatable(node_id)` MUST check, and report failures for, all of:
-unmet DAG prerequisites (§5, at Adept+), unmet affinity requirements (§9.2),
-insufficient branch usage level (§9.3), and insufficient points (§9.1) — in
-any order, but all four, every time; a conforming implementation MUST NOT
-short-circuit on the first failing gate when the caller wants a reason list
-(the reference CLI shows every unmet reason, not just one).
+`allocatable(node_id)` MUST check, and report failures for, all of: unmet
+DAG prerequisites (§4.1), unmet affinity requirements (§6.1), insufficient
+branch usage level (§6.2), and insufficient points (§5) — in any order, but
+all four, every time; a conforming implementation MUST NOT short-circuit on
+the first failing gate when the caller wants a reason list (the reference
+CLI shows every unmet reason, not just one).
 
-## 10. Importing existing lesson/skill libraries
+## 7. What RSTP deliberately does not do
+
+- It does not call tools, intercept calls, or hook into any runtime. There
+  is no enforcement contract of any kind.
+- It does not include a scheduler, server, or multi-writer concurrency
+  model. A tree file is assumed single-writer per session; merge conflicts
+  across sessions are a file-merge problem (e.g. plain `git merge` on JSON),
+  not a protocol concern.
+- It does not interpret `skill` or `provenance` beyond storing them as
+  given.
+- Earlier drafts (v1/v2, see §8) tried to make the tree double as a live
+  mistake-prevention guard, matching tool calls against triggers and
+  enforcing a `do` action. That framing is retired. If you want a
+  tool-call-time guard, that's a different, harder problem (ask: does the
+  host runtime already auto-attach the relevant context before your hook
+  fires? if so, your hook has nothing left to add) — RSTP v3 does not
+  attempt to solve it.
+
+## 8. History: why v1/v2's guard framing was dropped
+
+v1/v2 of this protocol modeled nodes as mistake-prevention lessons
+(`pitfall`/`do`/`triggers`/`always_guard_tools`), descended directly from
+[`vektra-reflex`](https://github.com/Vektra-Industries/vektra-reflex), a
+Hermes-plugin guard. An independent A/B test against a strong model showed
+that approach made no measurable difference: the host runtime's own skill
+auto-attach already primed context before the model acted, so a guard hook
+had nothing left to add on that path. Rather than keep chasing a narrower
+and narrower definition of "guard that actually does something," v3 cuts
+the pretense entirely and keeps only the part of the design that was
+genuinely good: a DAG-shaped, evidence/practice-gated progression system.
+Fields removed in this cut: `pitfall`, `do`, `triggers`, `always_guard_tools`,
+the `prevented`/`ineffective`/`unknown` outcome vocabulary (replaced by a
+single, simpler `practice` rep counter), and the `matches()`/trigger-match
+CLI surface (`--match`, `log <outcome>`).
+
+## 9. Importing existing skill libraries
 
 An implementation MAY ship an importer that converts an existing library of
-agent skills/capabilities (not just "mistake" lessons) into Seed-tier nodes,
-one per discovered skill, so that a library of capabilities can be tracked
-the same evidence-gated way as any other lesson: `prevented` when a relevant
-skill was actually reached for, `ineffective` when it was available and
-skipped. Node IDs from such an importer MUST be namespaced (e.g.
-`<category>/<name>`) to avoid collisions between two differently-categorized
-skills that happen to share a bare name. Re-running an importer MUST NOT
-reset evidence/tier/allocation on a node that already exists in the target
-tree — only new, not-yet-seen skills are added.
+agent skills/capabilities into Seed-tier nodes, one per discovered skill, so
+that a library of capabilities can be tracked the same practice-gated way
+as any hand-written node. Node IDs from such an importer MUST be namespaced
+(e.g. `<category>/<name>`) to avoid collisions between two differently-
+categorized skills that happen to share a bare name. Re-running an importer
+MUST NOT reset practice/tier/allocation on a node that already exists in
+the target tree — only new, not-yet-seen skills are added.
 
-## 11. Versioning
+## 10. Versioning
 
-This file describes protocol version 2 (`"version": 2` in a tree's root).
-Breaking changes to field meaning (not additions) require a version bump and
-a migration note in this file.
-
+This file describes protocol version 3 (`"version": 3` in a tree's root).
+v3 is a breaking change from v1/v2 (field removal, not just addition) — see
+§8. Future breaking changes to field meaning require a version bump and a
+migration note in this file.

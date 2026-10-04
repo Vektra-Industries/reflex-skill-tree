@@ -19,15 +19,10 @@ jobs:
         run: python3 -m unittest discover -s tests -v
       - name: Smoke-test the CLI
         run: |
-          # examples/ file is a list wrapper (with provenance comments) for docs;
-          # extract the inner node dict for the smoke test
-          python3 - <<'PY'
-          import json
-          raw = json.load(open("examples/from-vektra-reflex.json"))[0]["node"]
-          json.dump(raw, open("/tmp/node.json", "w"))
-          PY
-          python3 -m rstp seed /tmp/node.json --branch credential-ops --id cred-001 --tree /tmp/ci-tree.json
+          python3 -m rstp seed examples/guitar.json --branch music --id guitar --tree /tmp/ci-tree.json
           python3 -m rstp status --tree /tmp/ci-tree.json
-          python3 -m rstp status --tree /tmp/ci-tree.json --match "write_file /x/.env"
-          python3 -m rstp log cred-001 prevented --session ci --tree /tmp/ci-tree.json
+          python3 -m rstp practice guitar --session ci --tree /tmp/ci-tree.json
+          python3 -m rstp practice guitar --session ci --tree /tmp/ci-tree.json
+          python3 -m rstp allocate guitar --tree /tmp/ci-tree.json
+          python3 -m rstp status --tree /tmp/ci-tree.json --verbose
           python3 -m rstp check --tree /tmp/ci-tree.json

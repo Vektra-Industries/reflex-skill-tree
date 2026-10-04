@@ -1,0 +1,7 @@
+{
+  "title": "Playing guitar",
+  "description": "Fingerstyle technique, major/minor scales, basic chord transitions.",
+  "tier": 0,
+  "cost": 1,
+  "affinity": {"music-theory": 2}
+}

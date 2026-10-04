@@ -8,13 +8,10 @@ dependency-free frontmatter reader, not a YAML library, so it only needs
 scalars (`>-`/`>`/`|-`/`|`). Anything fancier in a real file is ignored
 safely rather than raising.
 
-Each discovered skill becomes one Tier-0 (Seed) node. The pitfall/do pair is
-generic and intentionally matches the house rule this is modeled on: a
-capability that exists but doesn't get reached for when it should is the
-"mistake" RSTP tracks here, same shape as any other lesson. Promote a skill
-node the same way as any other: log `prevented` when you actually reached
-for the skill at the right moment, `ineffective` when you had it and skipped
-it anyway.
+Each discovered skill becomes one Tier-0 (Seed) node in the tree. Promote a
+skill node the same way as any other: log a practice rep each time you
+actually used it, and it levels up through Novice -> Adept -> Expert ->
+Master the same way any hand-written node does.
 """
 from __future__ import annotations
 
@@ -96,22 +93,20 @@ def discover_skills(skills_root: str | Path) -> list[dict[str, Any]]:
 def import_skills(skills_root: str | Path, tree: Tree | None = None) -> Tree:
     """Build (or extend) a Tree with one Seed node per discovered skill.
     Existing nodes with the same id are left untouched (re-running an import
-    does not reset evidence/tier/allocation on skills already in the tree).
+    does not reset practice/tier/allocation on skills already in the tree).
     """
     tree = tree if tree is not None else Tree()
     existing = tree.nodes()
     for entry in discover_skills(skills_root):
         node_id = f"{entry['branch']}/{entry['name']}"
         if node_id in existing:
-            continue  # don't clobber real evidence already recorded
+            continue  # don't clobber real practice already recorded
         node = Node(
             id=node_id,
             branch=entry["branch"],
             title=entry["name"],
-            pitfall=f"Had the \"{entry['name']}\" skill available and relevant, but didn't load/use it.",
-            do=entry["description"] or f"Load the {entry['name']} skill and follow it.",
+            description=entry["description"],
             tier=TierName.SEED,
-            triggers={"tool_names": ["skill_view", "skill_manage"], "path_glob": [f"*{entry['name']}*"]},
             skill=entry["name"],
             provenance={"source": "rstp.importers.skills.import_skills", "path": entry["path"]},
         )

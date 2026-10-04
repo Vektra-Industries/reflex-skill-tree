@@ -101,17 +101,17 @@ class TestImportSkills(unittest.TestCase):
             self.assertIn("cat-a/example-one", tree.nodes())
             self.assertIn("cat-b/example-one", tree.nodes())
 
-    def test_reimport_does_not_clobber_existing_evidence(self):
+    def test_reimport_does_not_clobber_existing_practice(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             (root / "cat-a" / "example-one").mkdir(parents=True)
             (root / "cat-a" / "example-one" / "SKILL.md").write_text(SIMPLE, encoding="utf-8")
             tree = import_skills(root)
-            tree.record("cat-a/example-one", "prevented")
+            tree.practice("cat-a/example-one")
             tree2 = import_skills(root, tree=tree)
             node = tree2.get("cat-a/example-one")
             assert node is not None
-            self.assertEqual(node.evidence.prevented, 1)  # not reset to 0
+            self.assertEqual(node.practice.reps, 1)  # not reset to 0
 
 
 if __name__ == "__main__":
