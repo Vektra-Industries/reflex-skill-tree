@@ -19,7 +19,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ..tree import Node, Tree, TierName
+from ..tree import Node, TierName, Tree
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 _BLOCK_SCALAR_RE = re.compile(r"^([A-Za-z0-9_\-]+):\s*([>|][+-]?)\s*$")

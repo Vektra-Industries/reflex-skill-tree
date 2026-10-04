@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """rstp — command-line interface for a Reflex Skill Tree.
 
 Pure skill-tree software: nodes are skills/abilities, tiers are mastery
@@ -19,8 +18,8 @@ import json
 import sys
 from pathlib import Path
 
-from .tree import Node, TierName, load, save, validate_dag
 from . import __version__
+from .tree import Node, TierName, load, save, validate_dag
 
 DEFAULT_TREE = Path("tree.json")
 

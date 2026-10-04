@@ -42,7 +42,7 @@ Design borrows the genre's proven levers (see ../SPEC.md for citations):
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import IntEnum
 from pathlib import Path
@@ -91,7 +91,7 @@ class Practice:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any] | None) -> "Practice":
+    def from_dict(cls, d: dict[str, Any] | None) -> Practice:
         d = d or {}
         return cls(
             reps=int(d.get("reps", 0)),
@@ -150,7 +150,7 @@ class Node:
         return d
 
     @classmethod
-    def from_dict(cls, branch: str, node_id: str, d: dict[str, Any]) -> "Node":
+    def from_dict(cls, branch: str, node_id: str, d: dict[str, Any]) -> Node:
         return cls(
             id=node_id,
             branch=branch,
@@ -395,7 +395,7 @@ class Tree:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "Tree":
+    def from_dict(cls, d: dict[str, Any]) -> Tree:
         return cls(
             version=int(d.get("version", SCHEMA_VERSION)),
             branches=dict(d.get("branches") or {}),

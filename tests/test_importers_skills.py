@@ -9,7 +9,6 @@ from pathlib import Path
 from rstp.importers.skills import discover_skills, import_skills, parse_frontmatter
 from rstp.tree import TierName
 
-
 SIMPLE = """---
 name: example-one
 description: "A simple one-line description."

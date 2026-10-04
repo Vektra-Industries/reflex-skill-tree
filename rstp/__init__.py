@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from .tree import (
     Node,
-    Tree,
     TierName,
+    Tree,
     load,
     save,
     validate_dag,
 )
 
 __version__ = "0.5.0"
-__all__ = ["Node", "Tree", "TierName", "load", "save", "validate_dag", "__version__"]
+__all__ = ["Node", "TierName", "Tree", "__version__", "load", "save", "validate_dag"]

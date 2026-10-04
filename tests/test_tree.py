@@ -10,7 +10,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from rstp.tree import CycleError, Node, RSTPError, Tree, TierName, load, save, validate_dag
+from rstp.tree import (
+    CycleError,
+    Node,
+    RSTPError,
+    TierName,
+    Tree,
+    load,
+    save,
+    validate_dag,
+)
 
 
 def make_node(node_id="n1", branch="b1", prereqs=None, prereqs_any=None, tier=TierName.SEED, **kw) -> Node:
