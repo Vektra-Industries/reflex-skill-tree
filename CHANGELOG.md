@@ -3,6 +3,26 @@
 All notable changes to this project are documented here. Versions follow
 `MAJOR.MINOR.PATCH` loosely — this is a young protocol, not a stable API yet.
 
+## [0.7.0] - 2026-10-04
+
+### Added
+- **`frontline()` / `rstp frontline`** — an experience-ranked shortlist of
+  nodes that have at least one logged practice rep, sorted by (tier desc,
+  reps desc). This was built to test a specific claim: "repeated use lets
+  an agent reuse skills it has ranked up over time, ahead of its own
+  task-judgment." That claim was **false** of the tree before this release
+  — `practice()` only ever logged a rep *after* the agent had already
+  picked and used a node; nothing surfaced rank before a decision.
+  `frontline()` is the honest fix: a ranked-by-earned-use list an agent (or
+  harness) can consult, while staying inside the project's existing
+  no-guard, no-injection philosophy — it hands back data, it never picks
+  for the agent. Verified live against the real 326-skill house library
+  (`rstp import-skills` + several `rstp practice` calls + `rstp frontline`,
+  both text and `--json`, both unfiltered and `--branch`-filtered).
+- 5 new unit tests for `frontline()`, including a direct test that a
+  heavily-practiced node outranks a freshly-seeded, more "task-tempting"
+  one by title alone.
+
 ## [0.6.0] - 2026-10-04
 
 ### Added

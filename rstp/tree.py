@@ -334,6 +334,36 @@ class Tree:
         self.upsert(node)
         return node
 
+    def frontline(self, branch: str | None = None, top: int = 10) -> list[dict[str, Any]]:
+        """Experience-ranked shortlist: nodes with at least one logged practice
+        rep, sorted by (tier desc, reps desc) — the ones real use has proven,
+        not the ones a fresh task-judgment call would guess are 'best'.
+
+        This is the honest answer to 'does the tree bring proven skills to
+        the front, ahead of the agent's own task judgment': it can hand back
+        a ranked shortlist to *consult*, but it never injects, triggers, or
+        picks for the agent — same no-guard philosophy as the rest of this
+        module (see module docstring). Unpracticed (SEED, reps=0) nodes are
+        excluded on purpose: a node nobody has actually used has no earned
+        rank to surface, no matter how relevant its title sounds.
+        """
+        nodes = self.nodes()
+        rows = [
+            {
+                "id": nid,
+                "branch": n.branch,
+                "title": n.title,
+                "tier": str(TierName(n.tier)),
+                "tier_value": int(n.tier),
+                "reps": n.practice.reps,
+                "allocated": n.allocated,
+            }
+            for nid, n in nodes.items()
+            if n.practice.reps > 0 and (branch is None or n.branch == branch)
+        ]
+        rows.sort(key=lambda r: (-r["tier_value"], -r["reps"], r["id"]))
+        return rows[:top]
+
     def self_report(self) -> dict[str, Any]:
         """A compact, structured progress digest meant to be cheap for an
         agent to read before deciding what to practice/allocate/fuse next

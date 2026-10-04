@@ -509,5 +509,67 @@ class TestSelfReport(unittest.TestCase):
         self.assertIn("1 fusion node(s)", tree.narrate())
 
 
+class TestFrontline(unittest.TestCase):
+    """frontline(): experience-ranked shortlist, sorted by (tier desc, reps
+    desc), excluding never-practiced nodes. This is the honest, non-guard
+    answer to 'surface proven skills ahead of task judgment' — it ranks by
+    earned use, never by task relevance (it has no idea what the task is)."""
+
+    def test_unpracticed_nodes_excluded(self):
+        tree = Tree()
+        tree.upsert(make_node("fresh", tier=TierName.SEED))  # 0 reps
+        self.assertEqual(tree.frontline(), [])
+
+    def test_sorted_by_tier_then_reps_descending(self):
+        tree = Tree()
+        low = make_node("low", tier=TierName.NOVICE)
+        low.practice.reps = 1
+        tree.upsert(low)
+        high = make_node("high", tier=TierName.EXPERT)
+        high.practice.reps = 8
+        tree.upsert(high)
+        mid_more_reps = make_node("mid_a", tier=TierName.ADEPT)
+        mid_more_reps.practice.reps = 6
+        tree.upsert(mid_more_reps)
+        mid_fewer_reps = make_node("mid_b", tier=TierName.ADEPT)
+        mid_fewer_reps.practice.reps = 4
+        tree.upsert(mid_fewer_reps)
+        ids = [r["id"] for r in tree.frontline()]
+        self.assertEqual(ids, ["high", "mid_a", "mid_b", "low"])
+
+    def test_branch_filter(self):
+        tree = Tree()
+        a = make_node("a", branch="b1", tier=TierName.ADEPT)
+        a.practice.reps = 3
+        tree.upsert(a)
+        b = make_node("b", branch="b2", tier=TierName.ADEPT)
+        b.practice.reps = 3
+        tree.upsert(b)
+        ids = [r["id"] for r in tree.frontline(branch="b1")]
+        self.assertEqual(ids, ["a"])
+
+    def test_top_limits_results(self):
+        tree = Tree()
+        for i in range(5):
+            n = make_node(f"n{i}", tier=TierName.NOVICE)
+            n.practice.reps = 1
+            tree.upsert(n)
+        self.assertEqual(len(tree.frontline(top=2)), 2)
+
+    def test_real_use_outranks_a_fresh_judgment_pick(self):
+        """Direct test of the claim: a heavily-practiced lower-titled node
+        ranks ahead of an untouched node, regardless of which one a fresh
+        task-judgment call might consider a better fit."""
+        tree = Tree()
+        proven = make_node("proven", tier=TierName.EXPERT, title="boring but battle-tested")
+        proven.practice.reps = 8
+        tree.upsert(proven)
+        tempting = make_node("tempting", tier=TierName.SEED, title="looks perfect for this task")
+        tree.upsert(tempting)
+        ids = [r["id"] for r in tree.frontline()]
+        self.assertEqual(ids, ["proven"])
+        self.assertNotIn("tempting", ids)
+
+
 if __name__ == "__main__":
     unittest.main()

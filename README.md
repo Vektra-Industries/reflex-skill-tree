@@ -165,6 +165,35 @@ report = tree.self_report()
 #  "closest_to_promotion": [{"id": "scales", "tier": "Adept", "reps_remaining": 1}, ...]}
 ```
 
+## Frontline: experience-ranked, not task-judged
+
+A precise claim worth being exact about: RSTP does **not** decide which
+skill is best for an agent's current task — that judgment call always stays
+with the agent (or whatever primes its context, e.g. Hermes's own skill
+auto-attach). What RSTP *can* do is hand back a shortlist ranked purely by
+earned experience — tier first, then rep count — so an agent (or the
+harness around it) can consult "what have I actually gotten good at"
+independently of a fresh judgment call:
+
+```bash
+rstp frontline                        # top 10, all branches, text
+rstp frontline --branch music --top 3 # scoped + limited
+rstp frontline --json                 # structured
+```
+
+```python
+tree.frontline()
+# [{"id": "autonomous-ai-agents/hermes-agent", "tier": "Expert", "reps": 4, ...},
+#  {"id": "software-development/ilo-intel-maid", "tier": "Adept", "reps": 2, ...}, ...]
+```
+
+Nodes with zero logged practice reps never appear here, no matter how
+relevant their title looks — `frontline()` ranks earned use, not promise.
+It never injects anything into an agent's context and never picks for it;
+same no-guard philosophy as the rest of the tree (see `rstp/tree.py`'s
+module docstring for why an earlier, more active "guard" design was tried
+and dropped).
+
 ## Fusion: combining proven skills into something new
 
 Once two (or more) skills are each proven (Adept+), they can combine into a

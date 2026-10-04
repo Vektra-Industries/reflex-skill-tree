@@ -11,6 +11,7 @@ levels. No guard, no triggers, no mistake-catching.
   rstp allocate <node_id> [--tree PATH]   # spend points to lock a node into the build
   rstp check [--tree PATH]                # validate the DAG, exit 1 on problems
   rstp import-skills <skills_dir> [--tree PATH]   # seed Tier-0 nodes from a SKILL.md library
+  rstp frontline [--branch B] [--top N] [--json] [--tree PATH]  # experience-ranked shortlist
 """
 from __future__ import annotations
 
@@ -157,6 +158,23 @@ def cmd_check(args) -> int:
     return 0
 
 
+def cmd_frontline(args) -> int:
+    tree = load(args.tree)
+    rows = tree.frontline(branch=args.branch, top=args.top)
+    if not rows:
+        print("(no practiced nodes yet — frontline is earned by real use, not seeded)")
+        return 0
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    print(f"frontline — experience-ranked, not task-judged ({len(rows)} shown):")
+    for r in rows:
+        alloc_tag = " [ALLOCATED]" if r["allocated"] else ""
+        print(f"  {r['id']}  T{r['tier_value']} {r['tier']}{alloc_tag}  "
+              f"{r['reps']} rep(s)  [{r['branch']}]  \"{r['title']}\"")
+    return 0
+
+
 def cmd_import_skills(args) -> int:
     from .importers.skills import import_skills
 
@@ -223,6 +241,13 @@ def main(argv: list[str] | None = None) -> int:
                      help="a source node id; pass --from at least twice")
     s7.add_argument("--tree", type=Path, default=DEFAULT_TREE)
     s7.set_defaults(fn=cmd_fuse)
+
+    s9 = sub.add_parser("frontline")
+    s9.add_argument("--branch")
+    s9.add_argument("--top", type=int, default=10)
+    s9.add_argument("--json", action="store_true")
+    s9.add_argument("--tree", type=Path, default=DEFAULT_TREE)
+    s9.set_defaults(fn=cmd_frontline)
 
     s8 = sub.add_parser("import-skills")
     s8.add_argument("skills_dir")
