@@ -200,16 +200,19 @@ material doesn't re-enter the live tree.
 
 ## Visualizing a tree
 
-`viewer/index.html` is a standalone, dependency-free skill-tree renderer —
-no server, no build step, no network call, nothing leaves your machine.
-Open it in a browser, pick a `tree.json` file, and see the actual tree:
-nodes color-coded by tier, allocated nodes outlined in white, fusion nodes
-marked with a dashed border and a ⚡ badge, solid edges for AND-prerequisites
-(including fusion lineage), dashed edges for OR-prerequisites.
+**Live demo (no install): https://vektra-industries.github.io/reflex-skill-tree/**
+
+`docs/index.html` is a standalone, dependency-free skill-tree renderer —
+no server, no build step, no network call, nothing leaves your machine
+when run locally. Open it in a browser, pick a `tree.json` file, and see
+the actual tree: nodes color-coded by tier, allocated nodes outlined in
+white, fusion nodes marked with a dashed border and a ⚡ badge, solid edges
+for AND-prerequisites (including fusion lineage), dashed edges for
+OR-prerequisites.
 
 ```bash
 # any static file server works, e.g.:
-python3 -m http.server 8000 --directory viewer
+python3 -m http.server 8000 --directory docs
 # then open http://localhost:8000/index.html and pick a tree.json
 ```
 
@@ -217,10 +220,12 @@ python3 -m http.server 8000 --directory viewer
 some sandboxed/snap browser builds block local file access entirely, in
 which case the quick server above sidesteps it.)
 
-`viewer/example-tree.json` + `viewer/smoke-test.html` exist so the
-rendering logic can be verified headlessly (fetch the example tree, render
-it, screenshot) without driving a real file-picker — useful if you're
-modifying `viewer/app.js` and want to confirm it still renders correctly.
+`docs/example-tree.json` + `docs/smoke-test.html` exist so the rendering
+logic can be verified headlessly (fetch the example tree, render it,
+screenshot) without driving a real file-picker — useful if you're
+modifying `docs/app.js` and want to confirm it still renders correctly.
+This directory is also what GitHub Pages serves as the live demo above —
+one source, no build step, no duplication.
 
 ## History
 
@@ -241,7 +246,8 @@ Full version history: [`CHANGELOG.md`](CHANGELOG.md).
 v0.5.0. Reference implementation is stdlib-only Python with 62 unit tests
 covering the DAG/cycle rejection, promotion, points/affinity/branch-usage
 gating, fusion, self-report, the skill-library importer, and persistence —
-see `tests/`. Plus a dependency-free HTML/SVG viewer (`viewer/`),
+see `tests/`. Plus a dependency-free HTML/SVG viewer (`docs/`, also served
+live via GitHub Pages),
 screenshot-verified against a real multi-branch tree including a fusion
 node. This is a protocol + reference implementation, not a hosted service:
 your tree, your file, your repo.

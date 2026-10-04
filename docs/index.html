@@ -38,12 +38,18 @@
   .legend { display: flex; gap: 10px; font-size: 11px; flex-wrap: wrap; }
   .legend span { display: inline-flex; align-items: center; gap: 4px; }
   .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  #load-example {
+    background: #1f2937; color: var(--ink); border: 1px solid #374151;
+    border-radius: 4px; padding: 5px 10px; font-size: 12px; cursor: pointer;
+  }
+  #load-example:hover { background: #2d3748; }
 </style>
 </head>
 <body>
 <header>
   <h1>RSTP Tree Viewer</h1>
   <input type="file" id="file" accept="application/json">
+  <button id="load-example">Load example tree</button>
   <span class="stat" id="stats"></span>
   <div class="legend">
     <span><span class="swatch" style="background:var(--seed)"></span>Seed</span>
@@ -53,11 +59,24 @@
     <span><span class="swatch" style="background:var(--master)"></span>Master</span>
   </div>
 </header>
-<div id="empty">Open a tree.json file above to render it. Nothing leaves this
-page — it's all parsed and drawn locally, no server, no network.</div>
+<div id="empty">Open a tree.json file above, or click "Load example tree",
+to render it. Nothing leaves this page — it's all parsed and drawn
+locally, no server, no network.</div>
 <div id="canvas-wrap"></div>
 
 <script src="app.js"></script>
-<script>wireFileInput();</script>
+<script>
+  wireFileInput();
+  document.getElementById("load-example").addEventListener("click", () => {
+    fetch("example-tree.json")
+      .then((r) => r.json())
+      .then((tree) => render(tree))
+      .catch((err) => {
+        const emptyEl = document.getElementById("empty");
+        emptyEl.textContent = "Could not load example-tree.json: " + err.message;
+        emptyEl.style.display = "block";
+      });
+  });
+</script>
 </body>
 </html>
